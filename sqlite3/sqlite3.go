@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/go-sql-driver/mysql"
+
 	"github.com/go-job-worker-development-kit/db-connector/internal"
 	"github.com/go-job-worker-development-kit/jobworker"
 	"github.com/mattn/go-sqlite3"
@@ -12,6 +14,9 @@ import (
 )
 
 var isUniqueViolation = func(err error) bool {
+
+	mysql.ParseDSN()
+
 	if err == nil {
 		return false
 	}
@@ -84,7 +89,7 @@ SELECT * FROM %s WHERE job_id=?
 
 func (SQLTemplateForSQLite3) NewFindJobsDML(queueRawName string, limit int64) (stmt string, args []interface{}) {
 	query := `
-SELECT * FROM %s WHERE invisible_until <= strftime('%%s', 'now') ORDER BY sec_id DESC LIMIT %d
+SELECT * FROM %s WHERE invisible_until <= strftime('%%s', 'now') ORDER BY sec_id ASC LIMIT %d
 `
 	return fmt.Sprintf(query, queueRawName, limit), []interface{}{}
 }
