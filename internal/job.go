@@ -1,13 +1,16 @@
 package internal
 
-import "github.com/go-job-worker-development-kit/jobworker"
+import (
+	"strconv"
+
+	"github.com/go-job-worker-development-kit/jobworker"
+)
 
 type Job struct {
 	SecID           int64
 	JobID           string
-	Class           string
-	ReceiptID       string
 	Args            string
+	Class           *string
 	DeduplicationID *string
 	GroupID         *string
 	InvisibleUntil  int64
@@ -15,29 +18,27 @@ type Job struct {
 	EnqueueAt       int64
 }
 
-func (j *Job) ToJob(queue string, conn jobworker.Connector, logger jobworker.Logger) *jobworker.Job {
+func newJob(queueName string, job *Job, conn jobworker.Connector) *jobworker.Job {
 
-	var deduplicationID string
-	if j.DeduplicationID != nil {
-		deduplicationID = *j.DeduplicationID
+	metadata := make(map[string]string)
+	metadata["SecID"] = strconv.FormatInt(job.SecID, 10)
+	metadata["JobID"] = job.JobID
+	if job.DeduplicationID != nil {
+		metadata["DeduplicationID"] = *job.DeduplicationID
 	}
-	var groupID string
-	if j.GroupID != nil {
-		groupID = *j.GroupID
+	if job.GroupID != nil {
+		metadata["GroupID"] = *job.GroupID
+	}
+	metadata["InvisibleUntil"] = strconv.FormatInt(job.InvisibleUntil, 10)
+	metadata["RetryCount"] = strconv.FormatInt(job.RetryCount, 10)
+	metadata["EnqueueAt"] = strconv.FormatInt(job.EnqueueAt, 10)
+
+	payload := &jobworker.Payload{
+		Content:         job.Args,
+		Metadata:        metadata,
+		CustomAttribute: make(map[string]*jobworker.CustomAttribute),
+		Raw:             job,
 	}
 
-	job := jobworker.NewJob(
-		queue,
-		j.JobID,
-		j.Class,
-		j.ReceiptID,
-		j.Args,
-		deduplicationID,
-		groupID,
-		j.InvisibleUntil,
-		j.RetryCount,
-		j.EnqueueAt,
-		conn,
-	)
-	return job
+	return jobworker.NewJob(conn, queueName, payload)
 }

@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/go-sql-driver/mysql"
-
 	"github.com/go-job-worker-development-kit/db-connector/internal"
 	"github.com/go-job-worker-development-kit/jobworker"
 	"github.com/mattn/go-sqlite3"
@@ -14,9 +12,6 @@ import (
 )
 
 var isUniqueViolation = func(err error) bool {
-
-	mysql.ParseDSN()
-
 	if err == nil {
 		return false
 	}
@@ -68,7 +63,7 @@ func (Provider) Open(attrs map[string]interface{}) (jobworker.Connector, error) 
 	}
 
 	return &internal.Connector{
-		Name:               connName,
+		ConnName:           connName,
 		DB:                 db,
 		SQLTemplate:        SQLTemplateForSQLite3{},
 		IsUniqueViolation:  isUniqueViolation,
@@ -106,16 +101,16 @@ WHERE
 	return fmt.Sprintf(query, queueRawName), []interface{}{invisibleTime, jobID, oldRetryCount, oldInvisibleUntil}
 }
 
-func (SQLTemplateForSQLite3) NewEnqueueJobDML(queueRawName, jobID, class, args string, deduplicationID, groupID *string, delaySeconds int64) (string, []interface{}) {
+func (SQLTemplateForSQLite3) NewEnqueueJobDML(queueRawName, jobID, args string, class, deduplicationID, groupID *string, delaySeconds int64) (string, []interface{}) {
 	query := `
 INSERT INTO %s (job_id, class, args, deduplication_id, group_id, retry_count, invisible_until, enqueue_at)
 VALUES (?, ?, ?, ?, ?, 0, strftime('%%s', 'now') + ?, strftime('%%s', 'now') )
 `
-	return fmt.Sprintf(query, queueRawName), []interface{}{jobID, class, args, deduplicationID, groupID, delaySeconds}
+	return fmt.Sprintf(query, queueRawName), []interface{}{jobID, args, class, deduplicationID, groupID, delaySeconds}
 
 }
 
-func (SQLTemplateForSQLite3) NewEnqueueJobWithTimeDML(queueRawName, jobID, class, args string, deduplicationID, groupID *string, enqueueAt int64) (string, []interface{}) {
+func (SQLTemplateForSQLite3) NewEnqueueJobWithTimeDML(queueRawName, jobID, args string, class, deduplicationID, groupID *string, enqueueAt int64) (string, []interface{}) {
 	query := `
 INSERT INTO %s (job_id, class, args, deduplication_id, group_id, retry_count, invisible_until, enqueue_at)
 VALUES (?, ?, ?, ?, ?, 0, 0, ?)

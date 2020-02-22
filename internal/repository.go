@@ -20,9 +20,9 @@ type Repository struct {
 	tmpl    SQLTemplate
 }
 
-func (r *Repository) EnqueueJob(ctx context.Context, queue, jobID, class, args string, deduplicationID, groupID *string, delaySeconds int64) error {
+func (r *Repository) EnqueueJob(ctx context.Context, queue, jobID, args string, class, deduplicationID, groupID *string, delaySeconds int64) error {
 	stmt, stmtArgs := r.tmpl.NewEnqueueJobDML(queue,
-		jobID, class, args, deduplicationID, groupID, delaySeconds)
+		jobID, args, class, deduplicationID, groupID, delaySeconds)
 	_, err := r.querier.ExecContext(ctx, stmt, stmtArgs...)
 	if err != nil {
 		return err
@@ -30,9 +30,9 @@ func (r *Repository) EnqueueJob(ctx context.Context, queue, jobID, class, args s
 	return nil
 }
 
-func (r *Repository) EnqueueJobWithTime(ctx context.Context, queue string, jobID, class, args string, deduplicationID, groupID *string, enqueueAt int64) error {
+func (r *Repository) EnqueueJobWithTime(ctx context.Context, queue string, jobID, args string, class, deduplicationID, groupID *string, enqueueAt int64) error {
 	stmt, stmtArgs := r.tmpl.NewEnqueueJobWithTimeDML(queue,
-		jobID, class, args, deduplicationID, groupID, enqueueAt)
+		jobID, args, class, deduplicationID, groupID, enqueueAt)
 	_, err := r.querier.ExecContext(ctx, stmt, stmtArgs...)
 	if err != nil {
 		return err
