@@ -207,7 +207,7 @@ func (SQLTemplateForSQLite3) NewCreateQueueDDL(queueRawName string) string {
 CREATE TABLE IF NOT EXISTS %s (
         sec_id            INTEGER PRIMARY KEY,
         job_id            VARCHAR(255) NOT NULL,
-        class             VARCHAR(255) NOT NULL, 
+        class             VARCHAR(255), 
         args              TEXT,
         deduplication_id  VARCHAR(255),
         group_id          VARCHAR(255),

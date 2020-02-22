@@ -105,7 +105,7 @@ WHERE
 	return fmt.Sprintf(query, internal.PackageName, queueRawName), []interface{}{invisibleTime, jobID, oldRetryCount, oldInvisibleUntil}
 }
 
-func (SQLTemplateForPostgres) NewEnqueueJobDML(queueRawName, jobID, class, args string, deduplicationID, groupID *string, delaySeconds int64) (string, []interface{}) {
+func (SQLTemplateForPostgres) NewEnqueueJobDML(queueRawName, jobID, args string, class, deduplicationID, groupID *string, delaySeconds int64) (string, []interface{}) {
 	query := `
 INSERT INTO %s_%s (job_id, class, args, deduplication_id, group_id, retry_count, invisible_until, enqueue_at)
 VALUES (?, ?, ?, ?, ?, 0, extract(epoch from now()) + ?, extract(epoch from now()) ))
@@ -113,7 +113,7 @@ VALUES (?, ?, ?, ?, ?, 0, extract(epoch from now()) + ?, extract(epoch from now(
 	return fmt.Sprintf(query, internal.PackageName, queueRawName), []interface{}{jobID, class, args, deduplicationID, groupID, delaySeconds}
 }
 
-func (SQLTemplateForPostgres) NewEnqueueJobWithTimeDML(queueRawName, jobID, class, args string, deduplicationID, groupID *string, enqueueAt int64) (string, []interface{}) {
+func (SQLTemplateForPostgres) NewEnqueueJobWithTimeDML(queueRawName, jobID, args string, class, deduplicationID, groupID *string, enqueueAt int64) (string, []interface{}) {
 	query := `
 INSERT INTO %s_%s (job_id, class, args, deduplication_id, group_id, retry_count, invisible_until, enqueue_at) VALUES (?, ?, ?, ?, ?, 0, 0, ?)
 `
@@ -206,7 +206,7 @@ func (SQLTemplateForPostgres) NewCreateQueueDDL(queueRawName string) string {
 CREATE TABLE IF NOT EXISTS %s (
         sec_id            BIGSERIAL,
         job_id            VARCHAR(255) NOT NULL,
-        class             VARCHAR(255) NOT NULL,
+        class             VARCHAR(255),
         args              TEXT,
         deduplication_id  VARCHAR(255),
         group_id          VARCHAR(255),
