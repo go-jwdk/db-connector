@@ -16,8 +16,10 @@ const (
 	subStateClosed  = 2
 )
 
-func NewSubscription(queueAttr *QueueAttribute, maxNumberOfJobs int64, visibilityTimeout *int64, conn *Connector) *Subscription {
+func NewSubscription(interval time.Duration,
+	queueAttr *QueueAttribute, maxNumberOfJobs int64, visibilityTimeout *int64, conn *Connector) *Subscription {
 	return &Subscription{
+		interval:          interval,
 		queueAttr:         queueAttr,
 		conn:              conn,
 		visibilityTimeout: visibilityTimeout,
@@ -27,6 +29,7 @@ func NewSubscription(queueAttr *QueueAttribute, maxNumberOfJobs int64, visibilit
 }
 
 type Subscription struct {
+	interval          time.Duration
 	queueAttr         *QueueAttribute
 	maxNumberOfJobs   int64
 	visibilityTimeout *int64
@@ -100,7 +103,7 @@ func (s *Subscription) ReadLoop() {
 			}
 
 			if len(grabbedJobs) == 0 {
-				time.Sleep(time.Second) // TODO to params
+				time.Sleep(s.interval)
 				continue
 			}
 			for _, job := range grabbedJobs {

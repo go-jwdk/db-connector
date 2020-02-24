@@ -141,13 +141,23 @@ func (c *Connector) Subscribe(ctx context.Context, input *jobworker.SubscribeInp
 		visibilityTimeout = &i
 	}
 
+	pollingInterval := 3 * time.Second
+	if v, ok := input.Metadata["PollingInterval"]; ok {
+		i, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			// TODO
+			return nil, err
+		}
+		pollingInterval = time.Duration(i) * time.Second
+	}
+
 	var sub *Subscription
 	_, err := c.Retryer.Do(ctx, func(ctx context.Context) error {
 		queue, err := c.resolveQueue(ctx, input.Queue)
 		if err != nil {
 			return err
 		}
-		sub = NewSubscription(queue, maxNumberOfMessages, visibilityTimeout, c)
+		sub = NewSubscription(pollingInterval, queue, maxNumberOfMessages, visibilityTimeout, c)
 		return nil
 	}, func(err error) bool {
 		return c.IsDeadlockDetected(err)
