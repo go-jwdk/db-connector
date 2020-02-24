@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/go-job-worker-development-kit/db-connector/internal"
 	"github.com/go-job-worker-development-kit/jobworker"
@@ -51,23 +52,43 @@ func (Provider) Open(attrs map[string]interface{}) (jobworker.Connector, error) 
 	values := internal.ConnAttrsToValues(attrs)
 	values.ApplyDefaultValues()
 
-	db, err := sql.Open(connName, values.DSN)
+	var s Setting
+	s.DSN = values.DSN
+	s.MaxOpenConns = values.MaxOpenConns
+	s.MaxIdleConns = values.MaxIdleConns
+	s.ConnMaxLifetime = values.ConnMaxLifetime
+	s.NumMaxRetries = values.NumMaxRetries
+
+	return Open(&s)
+}
+
+type Setting struct {
+	DSN             string
+	MaxOpenConns    int
+	MaxIdleConns    int
+	ConnMaxLifetime *time.Duration
+	NumMaxRetries   *int
+}
+
+func Open(s *Setting) (*internal.Connector, error) {
+
+	db, err := sql.Open(connName, s.DSN)
 	if err != nil {
 		return nil, err
 	}
-	db.SetMaxOpenConns(values.MaxOpenConns)
-	db.SetMaxIdleConns(values.MaxIdleConns)
-	if values.ConnMaxLifetime != nil {
-		db.SetConnMaxLifetime(*values.ConnMaxLifetime)
+	db.SetMaxOpenConns(s.MaxOpenConns)
+	db.SetMaxIdleConns(s.MaxIdleConns)
+	if s.ConnMaxLifetime != nil {
+		db.SetConnMaxLifetime(*s.ConnMaxLifetime)
 	}
 
 	var er exponential.Retryer
-	if values.NumMaxRetries != nil {
-		er.NumMaxRetries = *values.NumMaxRetries
+	if s.NumMaxRetries != nil {
+		er.NumMaxRetries = *s.NumMaxRetries
 	}
 
 	return &internal.Connector{
-		Name:               connName,
+		ConnName:           connName,
 		DB:                 db,
 		SQLTemplate:        SQLTemplateForPostgres{},
 		IsUniqueViolation:  isUniqueViolation,
