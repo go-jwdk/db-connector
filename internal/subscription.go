@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/go-job-worker-development-kit/jobworker"
+	"github.com/go-jwdk/jobworker"
 )
 
 const (

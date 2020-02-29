@@ -1,5 +1,5 @@
-github.com/go-job-worker-development-kit/jobworker v0.1.0 h1:c2p7CwDEeZ3VjNeP3OJpnIUMgSqYYMW/ludTiQB55Hc=
-github.com/go-job-worker-development-kit/jobworker v0.1.0/go.mod h1:qao1ZgIzpcD+Yt8ZAsNqecjJ+xFm7ZzUftWa89Ep1Mc=
+github.com/go-jwdk/jobworker v0.1.0 h1:c2p7CwDEeZ3VjNeP3OJpnIUMgSqYYMW/ludTiQB55Hc=
+github.com/go-jwdk/jobworker v0.1.0/go.mod h1:qao1ZgIzpcD+Yt8ZAsNqecjJ+xFm7ZzUftWa89Ep1Mc=
 github.com/go-sql-driver/mysql v1.5.0 h1:ozyZYNQW3x3HtqT1jira07DN2PArx2v7/mN66gGcHOs=
 github.com/go-sql-driver/mysql v1.5.0/go.mod h1:DCzpHaOWr8IXmIStZouvnhqoel9Qv2LBy8hT2VhHyBg=
 github.com/lib/pq v1.3.0 h1:/qkRGz8zljWiDcFvgpwUpwIAPu3r07TDvs3Rws+o/pU=

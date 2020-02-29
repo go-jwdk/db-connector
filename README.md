@@ -1,6 +1,6 @@
 # db-connector
 
-A jobworker connector with database for [go-job-worker-development-kit/jobworker](https://github.com/go-job-worker-development-kit/jobworker) package.
+A jobworker connector with database for [go-jwdk/jobworker](https://github.com/go-jwdk/jobworker) package.
 
 Supported databases:
 
@@ -17,7 +17,7 @@ Go 1.13+
 This package can be installed with the go get command:
 
 ```
-$ go get -u github.com/go-job-worker-development-kit/db-connector
+$ go get -u github.com/go-jwdk/db-connector
 ```
 
 ## Usage
@@ -25,8 +25,8 @@ $ go get -u github.com/go-job-worker-development-kit/db-connector
 __MySQL__:
 
 ```go
-import "github.com/go-job-worker-development-kit/jobworker"
-import _ "github.com/go-job-worker-development-kit/db-connector/mysql"
+import "github.com/go-jwdk/jobworker"
+import _ "github.com/go-jwdk/db-connector/mysql"
 
 conn, err := jobworker.Open("mysql", map[string]interface{}{
     "DSN":             "user:password@/dbname",
@@ -40,8 +40,8 @@ conn, err := jobworker.Open("mysql", map[string]interface{}{
 __Postgres__:
 
 ```go
-import "github.com/go-job-worker-development-kit/jobworker"
-import _ "github.com/go-job-worker-development-kit/db-connector/postgres"
+import "github.com/go-jwdk/jobworker"
+import _ "github.com/go-jwdk/db-connector/postgres"
 
 conn, err := jobworker.Open("postgres", map[string]interface{}{
     "DSN":             "user=pqgotest dbname=pqgotest sslmode=verify-full",
@@ -55,8 +55,8 @@ conn, err := jobworker.Open("postgres", map[string]interface{}{
 __SQLite3__:
 
 ```go
-import "github.com/go-job-worker-development-kit/jobworker"
-import _ "github.com/go-job-worker-development-kit/db-connector/sqlite3"
+import "github.com/go-jwdk/jobworker"
+import _ "github.com/go-jwdk/db-connector/sqlite3"
 
 conn, err := jobworker.Open("sqlite3", map[string]interface{}{
     "DSN":             "file:test.db?cache=shared&mode=memory",

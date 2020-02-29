@@ -3,7 +3,7 @@ package internal
 import (
 	"strconv"
 
-	"github.com/go-job-worker-development-kit/jobworker"
+	"github.com/go-jwdk/jobworker"
 )
 
 type Job struct {

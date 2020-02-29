@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-job-worker-development-kit/db-connector/internal"
-	"github.com/go-job-worker-development-kit/jobworker"
+	"github.com/go-jwdk/db-connector/internal"
+	"github.com/go-jwdk/jobworker"
 	"github.com/go-sql-driver/mysql"
 	"github.com/vvatanabe/goretryer/exponential"
 )

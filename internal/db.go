@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-job-worker-development-kit/jobworker"
+	"github.com/go-jwdk/jobworker"
 	"github.com/vvatanabe/goretryer/exponential"
 
 	uuid "github.com/satori/go.uuid"

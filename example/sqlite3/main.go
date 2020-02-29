@@ -6,8 +6,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/go-job-worker-development-kit/db-connector/sqlite3"
-	"github.com/go-job-worker-development-kit/jobworker"
+	"github.com/go-jwdk/db-connector/sqlite3"
+	"github.com/go-jwdk/jobworker"
 	uuid "github.com/satori/go.uuid"
 )
 
