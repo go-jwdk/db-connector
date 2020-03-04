@@ -33,12 +33,12 @@ func newJob(queueName string, job *Job, conn jobworker.Connector) *jobworker.Job
 	metadata["RetryCount"] = strconv.FormatInt(job.RetryCount, 10)
 	metadata["EnqueueAt"] = strconv.FormatInt(job.EnqueueAt, 10)
 
-	payload := &jobworker.Payload{
+	return &jobworker.Job{
+		Conn:conn,
+		QueueName:queueName,
 		Content:         job.Args,
 		Metadata:        metadata,
 		CustomAttribute: make(map[string]*jobworker.CustomAttribute),
 		Raw:             job,
 	}
-
-	return jobworker.NewJob(conn, queueName, payload)
 }

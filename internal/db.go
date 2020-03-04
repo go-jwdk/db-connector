@@ -239,11 +239,11 @@ func (c *Connector) EnqueueBatch(ctx context.Context, input *jobworker.EnqueueBa
 func (c *Connector) CompleteJob(ctx context.Context, input *jobworker.CompleteJobInput) (*jobworker.CompleteJobOutput, error) {
 	repo := NewRepository(c.DB, c.SQLTemplate)
 	_, err := c.Retryer.Do(ctx, func(ctx context.Context) error {
-		queue, err := c.resolveQueue(ctx, input.Job.QueueName())
+		queue, err := c.resolveQueue(ctx, input.Job.QueueName)
 		if err != nil {
 			return err
 		}
-		err = repo.DeleteJob(ctx, queue.RawName, input.Job.Payload().Metadata["JobID"])
+		err = repo.DeleteJob(ctx, queue.RawName, input.Job.Metadata["JobID"])
 		if err != nil {
 			return err
 		}
@@ -454,12 +454,12 @@ func newJobID() string {
 func (c *Connector) ChangeJobVisibility(ctx context.Context, input *ChangeJobVisibilityInput) (*ChangeJobVisibilityOutput, error) {
 	repo := NewRepository(c.DB, c.SQLTemplate)
 	_, err := c.Retryer.Do(ctx, func(ctx context.Context) error {
-		queue, err := c.resolveQueue(ctx, input.Job.QueueName())
+		queue, err := c.resolveQueue(ctx, input.Job.QueueName)
 		if err != nil {
 			return err
 		}
 		_, err = repo.UpdateJobVisibility(ctx,
-			queue.RawName, input.Job.Payload().Metadata["JobID"], input.VisibilityTimeout)
+			queue.RawName, input.Job.Metadata["JobID"], input.VisibilityTimeout)
 		if err != nil {
 			return err
 		}
