@@ -6,11 +6,21 @@ import (
 	"github.com/go-jwdk/jobworker"
 )
 
+func newJob(queueName string, job *Job, conn jobworker.Connector) *jobworker.Job {
+	return &jobworker.Job{
+		Conn:            conn,
+		QueueName:       queueName,
+		Content:         job.Content,
+		Metadata:        newMetadata(job),
+		CustomAttribute: make(map[string]*jobworker.CustomAttribute),
+		Raw:             job,
+	}
+}
+
 type Job struct {
 	SecID           int64
 	JobID           string
-	Args            string
-	Class           *string
+	Content         string
 	DeduplicationID *string
 	GroupID         *string
 	InvisibleUntil  int64
@@ -18,27 +28,28 @@ type Job struct {
 	EnqueueAt       int64
 }
 
-func newJob(queueName string, job *Job, conn jobworker.Connector) *jobworker.Job {
+const (
+	MetadataKeySecID           = "SecID"
+	MetadataKeyJobID           = "JobID"
+	MetadataKeyDeduplicationID = "DeduplicationID"
+	MetadataKeyGroupID         = "GroupID"
+	MetadataKeyInvisibleUntil  = "InvisibleUntil"
+	MetadataKeyRetryCount      = "RetryCount"
+	MetadataKeyEnqueueAt       = "EnqueueAt"
+)
 
+func newMetadata(job *Job) map[string]string {
 	metadata := make(map[string]string)
-	metadata["SecID"] = strconv.FormatInt(job.SecID, 10)
-	metadata["JobID"] = job.JobID
+	metadata[MetadataKeySecID] = strconv.FormatInt(job.SecID, 10)
+	metadata[MetadataKeyJobID] = job.JobID
 	if job.DeduplicationID != nil {
-		metadata["DeduplicationID"] = *job.DeduplicationID
+		metadata[MetadataKeyDeduplicationID] = *job.DeduplicationID
 	}
 	if job.GroupID != nil {
-		metadata["GroupID"] = *job.GroupID
+		metadata[MetadataKeyGroupID] = *job.GroupID
 	}
-	metadata["InvisibleUntil"] = strconv.FormatInt(job.InvisibleUntil, 10)
-	metadata["RetryCount"] = strconv.FormatInt(job.RetryCount, 10)
-	metadata["EnqueueAt"] = strconv.FormatInt(job.EnqueueAt, 10)
-
-	return &jobworker.Job{
-		Conn:conn,
-		QueueName:queueName,
-		Content:         job.Args,
-		Metadata:        metadata,
-		CustomAttribute: make(map[string]*jobworker.CustomAttribute),
-		Raw:             job,
-	}
+	metadata[MetadataKeyInvisibleUntil] = strconv.FormatInt(job.InvisibleUntil, 10)
+	metadata[MetadataKeyRetryCount] = strconv.FormatInt(job.RetryCount, 10)
+	metadata[MetadataKeyEnqueueAt] = strconv.FormatInt(job.EnqueueAt, 10)
+	return metadata
 }

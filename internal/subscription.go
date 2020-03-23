@@ -21,11 +21,12 @@ const (
 	subMetadataKeyMaxNumberOfJobs   = "MaxNumberOfJobs"
 
 	defaultPollingInterval = 3 * time.Second
+	defaultMaxNumberOfJobs = int64(1)
 )
 
 func NewSubscription(queueAttr *QueueAttribute,
 	conn *Connector, meta map[string]string) *Subscription {
-	pollingInterval, visibilityTimeout, maxNumberOfMessages := extractSubMetadata(meta)
+	pollingInterval, visibilityTimeout, maxNumberOfMessages := extractSubMetadata(meta, queueAttr)
 	return &Subscription{
 		pollingInterval:   pollingInterval,
 		queueAttr:         queueAttr,
@@ -36,10 +37,10 @@ func NewSubscription(queueAttr *QueueAttribute,
 	}
 }
 
-func extractSubMetadata(meta map[string]string) (
+func extractSubMetadata(meta map[string]string, queueAttr *QueueAttribute) (
 	pollingInterval time.Duration,
-	visibilityTimeout *int64,
-	maxNumberOfMessages *int64,
+	visibilityTimeout int64,
+	maxNumberOfMessages int64,
 ) {
 
 	pollingInterval = defaultPollingInterval
@@ -50,19 +51,19 @@ func extractSubMetadata(meta map[string]string) (
 		}
 	}
 
-	// TODO apply default value
+	visibilityTimeout = queueAttr.VisibilityTimeout
 	if v := meta[subMetadataKeyVisibilityTimeout]; v != "" {
 		i, err := strconv.ParseInt(v, 10, 64)
 		if err == nil {
-			visibilityTimeout = &i
+			visibilityTimeout = i
 		}
 	}
 
-	// TODO apply default value
+	maxNumberOfMessages = defaultMaxNumberOfJobs
 	if v := meta[subMetadataKeyMaxNumberOfJobs]; v != "" {
 		i, err := strconv.ParseInt(v, 10, 64)
 		if err == nil {
-			maxNumberOfMessages = &i
+			maxNumberOfMessages = i
 		}
 	}
 	return
@@ -73,8 +74,8 @@ type Subscription struct {
 	conn              *Connector
 
 	pollingInterval   time.Duration
-	visibilityTimeout *int64
-	maxNumberOfJobs   *int64
+	visibilityTimeout int64
+	maxNumberOfJobs   int64
 
 	grabJobs func(ctx context.Context, queueRawName string, maxReceiveCount, maxNumberOfJobs, visibilityTimeout int64, handleDeadJob func(deadJobs []*Job) error) ([]*Job, error)
 	queue chan *jobworker.Job
@@ -113,7 +114,7 @@ func (s *Subscription) writeChan(ch chan *Job) {
 		ctx := context.Background()
 		grabbedJobs, err := s.grabJobs(ctx,
 			s.queueAttr.RawName,
-			s.queueAttr.MaxReceiveCount, *s.maxNumberOfJobs, *s.visibilityTimeout,
+			s.queueAttr.MaxReceiveCount, s.maxNumberOfJobs, s.visibilityTimeout,
 			func(deadJobs []*Job) error {
 				if s.queueAttr.HasDeadLetter() {
 					deadLetterQueue, err := s.conn.resolveQueue(ctx, s.queueAttr.DeadLetterTarget)
