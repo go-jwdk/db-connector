@@ -118,46 +118,13 @@ func (c *Connector) Name() string {
 }
 
 func (c *Connector) Subscribe(ctx context.Context, input *jobworker.SubscribeInput) (*jobworker.SubscribeOutput, error) {
-
-	maxNumberOfMessages := int64(1)
-	if v, ok := input.Metadata["MaxNumberOfMessages"]; ok {
-		i, err := strconv.ParseInt(v, 10, 64)
-		if err != nil {
-			// TODO
-			return nil, err
-		}
-		if i > 0 {
-			maxNumberOfMessages = i
-		}
-	}
-
-	var visibilityTimeout *int64
-	if v, ok := input.Metadata["VisibilityTimeout"]; ok {
-		i, err := strconv.ParseInt(v, 10, 64)
-		if err != nil {
-			// TODO
-			return nil, err
-		}
-		visibilityTimeout = &i
-	}
-
-	pollingInterval := 3 * time.Second
-	if v, ok := input.Metadata["PollingInterval"]; ok {
-		i, err := strconv.ParseInt(v, 10, 64)
-		if err != nil {
-			// TODO
-			return nil, err
-		}
-		pollingInterval = time.Duration(i) * time.Second
-	}
-
 	var sub *Subscription
 	_, err := c.Retryer.Do(ctx, func(ctx context.Context) error {
 		queue, err := c.resolveQueue(ctx, input.Queue)
 		if err != nil {
 			return err
 		}
-		sub = NewSubscription(pollingInterval, queue, maxNumberOfMessages, visibilityTimeout, c)
+		sub = NewSubscription(queue, c, input.Metadata)
 		return nil
 	}, func(err error) bool {
 		return c.IsDeadlockDetected(err)
@@ -165,7 +132,7 @@ func (c *Connector) Subscribe(ctx context.Context, input *jobworker.SubscribeInp
 	if err != nil {
 		return nil, err
 	}
-	go sub.ReadLoop()
+	go sub.Start()
 	return &jobworker.SubscribeOutput{
 		Subscription: sub,
 	}, nil
@@ -189,7 +156,7 @@ func (c *Connector) Enqueue(ctx context.Context, input *jobworker.EnqueueInput) 
 		return repo.EnqueueJob(ctx,
 			queue.RawName,
 			jobID,
-			input.Payload,
+			input.Content,
 			class,
 			deduplicationID,
 			groupID,

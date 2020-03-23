@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"sync/atomic"
 	"time"
 
@@ -11,30 +12,71 @@ import (
 )
 
 const (
-	subStateActive  = 0
-	subStateClosing = 1
-	subStateClosed  = 2
+	subStateActive  = int32(0)
+	subStateClosing = int32(1)
+	subStateClosed  = int32(2)
+
+	subMetadataKeyPollingInterval   = "PollingInterval"
+	subMetadataKeyVisibilityTimeout = "VisibilityTimeout"
+	subMetadataKeyMaxNumberOfJobs   = "MaxNumberOfJobs"
+
+	defaultPollingInterval = 3 * time.Second
 )
 
-func NewSubscription(interval time.Duration,
-	queueAttr *QueueAttribute, maxNumberOfJobs int64, visibilityTimeout *int64, conn *Connector) *Subscription {
+func NewSubscription(queueAttr *QueueAttribute,
+	conn *Connector, meta map[string]string) *Subscription {
+	pollingInterval, visibilityTimeout, maxNumberOfMessages := extractSubMetadata(meta)
 	return &Subscription{
-		interval:          interval,
+		pollingInterval:   pollingInterval,
 		queueAttr:         queueAttr,
 		conn:              conn,
 		visibilityTimeout: visibilityTimeout,
-		maxNumberOfJobs:   maxNumberOfJobs,
+		maxNumberOfJobs:   maxNumberOfMessages,
 		queue:             make(chan *jobworker.Job),
 	}
 }
 
+func extractSubMetadata(meta map[string]string) (
+	pollingInterval time.Duration,
+	visibilityTimeout *int64,
+	maxNumberOfMessages *int64,
+) {
+
+	pollingInterval = defaultPollingInterval
+	if v := meta[subMetadataKeyPollingInterval]; v != "" {
+		i, err := strconv.ParseInt(v, 10, 64)
+		if err == nil {
+			pollingInterval = time.Duration(i) * time.Second
+		}
+	}
+
+	// TODO apply default value
+	if v := meta[subMetadataKeyVisibilityTimeout]; v != "" {
+		i, err := strconv.ParseInt(v, 10, 64)
+		if err == nil {
+			visibilityTimeout = &i
+		}
+	}
+
+	// TODO apply default value
+	if v := meta[subMetadataKeyMaxNumberOfJobs]; v != "" {
+		i, err := strconv.ParseInt(v, 10, 64)
+		if err == nil {
+			maxNumberOfMessages = &i
+		}
+	}
+	return
+}
+
 type Subscription struct {
-	interval          time.Duration
 	queueAttr         *QueueAttribute
-	maxNumberOfJobs   int64
-	visibilityTimeout *int64
 	conn              *Connector
 
+	pollingInterval   time.Duration
+	visibilityTimeout *int64
+	maxNumberOfJobs   *int64
+
+	grabJobs func(ctx context.Context, queueRawName string, maxReceiveCount, maxNumberOfJobs, visibilityTimeout int64, handleDeadJob func(deadJobs []*Job) error) ([]*Job, error)
 	queue chan *jobworker.Job
 	state int32
 }
@@ -56,62 +98,55 @@ func (s *Subscription) UnSubscribe() error {
 	return nil
 }
 
-func (s *Subscription) ReadLoop() {
+func (s *Subscription) Start() {
+	msgCh := make(chan *Job)
+	go s.writeChan(msgCh)
+	s.readChan(msgCh)
+}
 
-	ch := make(chan *Job)
-
-	go func() {
-		for {
-
-			if atomic.LoadInt32(&s.state) != subStateActive {
-				// TODO logging
-				return
-			}
-
-			ctx := context.Background()
-
-			visibilityTimeout := s.queueAttr.VisibilityTimeout
-			if s.visibilityTimeout != nil {
-				visibilityTimeout = *s.visibilityTimeout
-			}
-
-			grabbedJobs, err := s.conn.grabJobs(ctx,
-				s.queueAttr.RawName,
-				s.queueAttr.MaxReceiveCount, s.maxNumberOfJobs, visibilityTimeout,
-				func(deadJobs []*Job) error {
-					if s.queueAttr.HasDeadLetter() {
-						deadLetterQueue, err := s.conn.resolveQueue(ctx, s.queueAttr.DeadLetterTarget)
-						if err != nil {
-							return err
-						}
-						err = s.conn.moveJobBatch(ctx, s.queueAttr, deadLetterQueue, deadJobs)
-						if err != nil {
-							return fmt.Errorf("could not move job batch: %w", err)
-						}
-					} else {
-						err := s.conn.cleanJobBatch(ctx, s.queueAttr, deadJobs)
-						if err != nil {
-							return fmt.Errorf("could not clean job batch: %w", err)
-						}
-					}
-					return nil
-				})
-			if err != nil {
-				close(ch)
-				// TODO logging
-				return
-			}
-
-			if len(grabbedJobs) == 0 {
-				time.Sleep(s.interval)
-				continue
-			}
-			for _, job := range grabbedJobs {
-				ch <- job
-			}
+func (s *Subscription) writeChan(ch chan *Job) {
+	for {
+		if atomic.LoadInt32(&s.state) != subStateActive {
+			close(ch)
+			return
 		}
-	}()
+		ctx := context.Background()
+		grabbedJobs, err := s.grabJobs(ctx,
+			s.queueAttr.RawName,
+			s.queueAttr.MaxReceiveCount, *s.maxNumberOfJobs, *s.visibilityTimeout,
+			func(deadJobs []*Job) error {
+				if s.queueAttr.HasDeadLetter() {
+					deadLetterQueue, err := s.conn.resolveQueue(ctx, s.queueAttr.DeadLetterTarget)
+					if err != nil {
+						return err
+					}
+					err = s.conn.moveJobBatch(ctx, s.queueAttr, deadLetterQueue, deadJobs)
+					if err != nil {
+						return fmt.Errorf("could not move job batch: %w", err)
+					}
+				} else {
+					err := s.conn.cleanJobBatch(ctx, s.queueAttr, deadJobs)
+					if err != nil {
+						return fmt.Errorf("could not clean job batch: %w", err)
+					}
+				}
+				return nil
+			})
+		if err != nil {
+			close(ch)
+			return
+		}
+		if len(grabbedJobs) == 0 {
+			time.Sleep(s.pollingInterval)
+			continue
+		}
+		for _, job := range grabbedJobs {
+			ch <- job
+		}
+	}
+}
 
+func (s *Subscription) readChan(ch chan *Job) {
 	for {
 		job, ok := <-ch
 		if !ok {

@@ -228,8 +228,7 @@ func (SQLTemplateForSQLite3) NewCreateQueueDDL(queueRawName string) string {
 CREATE TABLE IF NOT EXISTS %s (
         sec_id            INTEGER PRIMARY KEY,
         job_id            VARCHAR(255) NOT NULL,
-        class             VARCHAR(255), 
-        args              TEXT,
+        content           TEXT,
         deduplication_id  VARCHAR(255),
         group_id          VARCHAR(255),
         invisible_until   INTEGER UNSIGNED NOT NULL,
@@ -237,8 +236,7 @@ CREATE TABLE IF NOT EXISTS %s (
         enqueue_at        INTEGER UNSIGNED,
         UNIQUE(deduplication_id)
 );
-CREATE INDEX IF NOT EXISTS %s_idx_invisible_until_class ON %s (invisible_until, class);
 CREATE INDEX IF NOT EXISTS %s_idx_invisible_until_retry_count ON %s (invisible_until, retry_count);
 `
-	return fmt.Sprintf(query, queueRawName, queueRawName, queueRawName, queueRawName, queueRawName)
+	return fmt.Sprintf(query, queueRawName, queueRawName, queueRawName)
 }
