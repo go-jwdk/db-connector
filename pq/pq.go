@@ -100,21 +100,21 @@ func Open(s *Setting) (*internal.Connector, error) {
 type SQLTemplateForPostgres struct {
 }
 
-func (SQLTemplateForPostgres) NewFindJobDML(queueRawName string, jobID string) (string, []interface{}) {
+func (SQLTemplateForPostgres) NewFindJobDML(table string, jobID string) (string, []interface{}) {
 	query := `
 SELECT * FROM %s_%s WHERE job_id=?
 `
-	return fmt.Sprintf(query, internal.PackageName, queueRawName), []interface{}{jobID}
+	return fmt.Sprintf(query, internal.PackageName, table), []interface{}{jobID}
 }
 
-func (SQLTemplateForPostgres) NewFindJobsDML(queueRawName string, limit int64) (stmt string, args []interface{}) {
+func (SQLTemplateForPostgres) NewFindJobsDML(table string, limit int64) (stmt string, args []interface{}) {
 	query := `
 SELECT * FROM %s_%s WHERE invisible_until <= extract(epoch from now()) ORDER BY sec_id DESC LIMIT %d
 `
-	return fmt.Sprintf(query, internal.PackageName, queueRawName, limit), []interface{}{}
+	return fmt.Sprintf(query, internal.PackageName, table, limit), []interface{}{}
 }
 
-func (SQLTemplateForPostgres) NewHideJobDML(queueRawName string, jobID string, oldRetryCount, oldInvisibleUntil, invisibleTime int64) (stmt string, args []interface{}) {
+func (SQLTemplateForPostgres) NewHideJobDML(table string, jobID string, oldRetryCount, oldInvisibleUntil, invisibleTime int64) (stmt string, args []interface{}) {
 	query := `
 UPDATE %s_%s
 SET retry_count=retry_count+1, invisible_until=extract(epoch from now())+?
@@ -123,29 +123,30 @@ WHERE
   retry_count=? AND
   invisible_until=?
 `
-	return fmt.Sprintf(query, internal.PackageName, queueRawName), []interface{}{invisibleTime, jobID, oldRetryCount, oldInvisibleUntil}
+	return fmt.Sprintf(query, internal.PackageName, table), []interface{}{invisibleTime, jobID, oldRetryCount, oldInvisibleUntil}
 }
 
-func (SQLTemplateForPostgres) NewEnqueueJobDML(queueRawName, jobID, args string, class, deduplicationID, groupID *string, delaySeconds int64) (string, []interface{}) {
+func (SQLTemplateForPostgres) NewEnqueueJobDML(table, jobID, content string, deduplicationID, groupID *string, delaySeconds int64) (string, []interface{}) {
 	query := `
-INSERT INTO %s_%s (job_id, class, args, deduplication_id, group_id, retry_count, invisible_until, enqueue_at)
-VALUES (?, ?, ?, ?, ?, 0, extract(epoch from now()) + ?, extract(epoch from now()) ))
+INSERT INTO %s_%s (job_id, content, deduplication_id, group_id, retry_count, invisible_until, enqueue_at)
+VALUES (?, ?, ?, ?, 0, extract(epoch from now()) + ?, extract(epoch from now()) ))
 `
-	return fmt.Sprintf(query, internal.PackageName, queueRawName), []interface{}{jobID, class, args, deduplicationID, groupID, delaySeconds}
+	return fmt.Sprintf(query, internal.PackageName, table), []interface{}{jobID, content, deduplicationID, groupID, delaySeconds}
 }
 
-func (SQLTemplateForPostgres) NewEnqueueJobWithTimeDML(queueRawName, jobID, args string, class, deduplicationID, groupID *string, enqueueAt int64) (string, []interface{}) {
+func (SQLTemplateForPostgres) NewEnqueueJobWithTimeDML(table, jobID, content string, deduplicationID, groupID *string, enqueueAt int64) (string, []interface{}) {
 	query := `
-INSERT INTO %s_%s (job_id, class, args, deduplication_id, group_id, retry_count, invisible_until, enqueue_at) VALUES (?, ?, ?, ?, ?, 0, 0, ?)
+INSERT INTO %s_%s (job_id, content, deduplication_id, group_id, retry_count, invisible_until, enqueue_at) 
+VALUES (?, ?, ?, ?, 0, 0, ?)
 `
-	return fmt.Sprintf(query, internal.PackageName, queueRawName), []interface{}{jobID, class, args, deduplicationID, groupID, enqueueAt}
+	return fmt.Sprintf(query, internal.PackageName, table), []interface{}{jobID, content, deduplicationID, groupID, enqueueAt}
 }
 
-func (SQLTemplateForPostgres) NewDeleteJobDML(queueRawName, jobID string) (stmt string, args []interface{}) {
+func (SQLTemplateForPostgres) NewDeleteJobDML(table, jobID string) (stmt string, args []interface{}) {
 	query := `
 DELETE FROM %s_%s WHERE job_id = ?
 `
-	return fmt.Sprintf(query, internal.PackageName, queueRawName),
+	return fmt.Sprintf(query, internal.PackageName, table),
 		[]interface{}{jobID}
 }
 
@@ -157,14 +158,14 @@ SELECT * FROM %s_queue_setting WHERE name=?
 		[]interface{}{queueName}
 }
 
-func (SQLTemplateForPostgres) NewUpdateJobByVisibilityTimeoutDML(queueRawName string, jobID string, visibilityTimeout int64) (stmt string, args []interface{}) {
+func (SQLTemplateForPostgres) NewUpdateJobByVisibilityTimeoutDML(table string, jobID string, visibilityTimeout int64) (stmt string, args []interface{}) {
 	query := `
 UPDATE %s_%s SET visible_after = extract(epoch from now()) + ? WHERE job_id = ?
 `
-	return fmt.Sprintf(query, internal.PackageName, queueRawName), []interface{}{visibilityTimeout, jobID}
+	return fmt.Sprintf(query, internal.PackageName, table), []interface{}{visibilityTimeout, jobID}
 }
 
-func (SQLTemplateForPostgres) NewAddQueueAttributeDML(queueName, queueRawName string, delaySeconds, maximumMessageSize, messageRetentionPeriod int64, deadLetterTarget string, maxReceiveCount, visibilityTimeout int64) (string, []interface{}) {
+func (SQLTemplateForPostgres) NewAddQueueAttributeDML(queueName, table string, delaySeconds, maximumMessageSize, messageRetentionPeriod int64, deadLetterTarget string, maxReceiveCount, visibilityTimeout int64) (string, []interface{}) {
 	query := `
 INSERT INTO %s_queue_setting (name, visibility_timeout, delay_seconds, maximum_message_size, message_retention_period, dead_letter_target, max_receive_count) VALUES (?, ?, ?, ?, ?, ?, ?)
 `
@@ -222,13 +223,12 @@ CREATE TABLE IF NOT EXISTS %s_queue_setting (
 	return fmt.Sprintf(query, internal.PackageName)
 }
 
-func (SQLTemplateForPostgres) NewCreateQueueDDL(queueRawName string) string {
+func (SQLTemplateForPostgres) NewCreateQueueDDL(table string) string {
 	query := `
 CREATE TABLE IF NOT EXISTS %s (
         sec_id            BIGSERIAL,
         job_id            VARCHAR(255) NOT NULL,
-        class             VARCHAR(255),
-        args              TEXT,
+        content           TEXT,
         deduplication_id  VARCHAR(255),
         group_id          VARCHAR(255),
         invisible_until   BIGINT NOT NULL,
@@ -240,9 +240,7 @@ CREATE TABLE IF NOT EXISTS %s (
 		KEY (invisible_until, class),
 		KEY (invisible_until, retry_count),
 );
-CREATE INDEX IF NOT EXISTS %s_idx_invisible_until_class ON %s (invisible_until, class);
 CREATE INDEX IF NOT EXISTS %s_idx_invisible_until_retry_count ON %s (invisible_until, retry_count);
 `
-	tablaName := fmt.Sprintf("%s_%s", internal.PackageName, queueRawName)
-	return fmt.Sprintf(query, tablaName, tablaName, tablaName, tablaName, tablaName)
+	return fmt.Sprintf(query, table, table, table)
 }
