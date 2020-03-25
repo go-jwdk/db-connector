@@ -70,16 +70,16 @@ func extractSubMetadata(meta map[string]string, queueAttr *QueueAttribute) (
 }
 
 type Subscription struct {
-	queueAttr         *QueueAttribute
-	conn              *Connector
+	queueAttr *QueueAttribute
+	conn      *Connector
 
 	pollingInterval   time.Duration
 	visibilityTimeout int64
 	maxNumberOfJobs   int64
 
 	grabJobs func(ctx context.Context, queueRawName string, maxReceiveCount, maxNumberOfJobs, visibilityTimeout int64, handleDeadJob func(deadJobs []*Job) error) ([]*Job, error)
-	queue chan *jobworker.Job
-	state int32
+	queue    chan *jobworker.Job
+	state    int32
 }
 
 func (s *Subscription) Active() bool {
@@ -123,12 +123,12 @@ func (s *Subscription) writeChan(ch chan *Job) {
 					}
 					err = s.conn.moveJobBatch(ctx, s.queueAttr, deadLetterQueue, deadJobs)
 					if err != nil {
-						return fmt.Errorf("could not move job batch: %w", err)
+						return fmt.Errorf("could not move job batch: %s", err)
 					}
 				} else {
 					err := s.conn.cleanJobBatch(ctx, s.queueAttr, deadJobs)
 					if err != nil {
-						return fmt.Errorf("could not clean job batch: %w", err)
+						return fmt.Errorf("could not clean job batch: %s", err)
 					}
 				}
 				return nil

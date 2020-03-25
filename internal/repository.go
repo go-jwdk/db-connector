@@ -20,9 +20,9 @@ type Repository struct {
 	tmpl    SQLTemplate
 }
 
-func (r *Repository) EnqueueJob(ctx context.Context, queue, jobID, args string, class, deduplicationID, groupID *string, delaySeconds int64) error {
+func (r *Repository) EnqueueJob(ctx context.Context, queue, jobID, args string, deduplicationID, groupID *string, delaySeconds int64) error {
 	stmt, stmtArgs := r.tmpl.NewEnqueueJobDML(queue,
-		jobID, args, class, deduplicationID, groupID, delaySeconds)
+		jobID, args, deduplicationID, groupID, delaySeconds)
 	_, err := r.querier.ExecContext(ctx, stmt, stmtArgs...)
 	if err != nil {
 		return err
@@ -30,9 +30,9 @@ func (r *Repository) EnqueueJob(ctx context.Context, queue, jobID, args string, 
 	return nil
 }
 
-func (r *Repository) EnqueueJobWithTime(ctx context.Context, queue string, jobID, args string, class, deduplicationID, groupID *string, enqueueAt int64) error {
+func (r *Repository) EnqueueJobWithTime(ctx context.Context, queue string, jobID, args string, deduplicationID, groupID *string, enqueueAt int64) error {
 	stmt, stmtArgs := r.tmpl.NewEnqueueJobWithTimeDML(queue,
-		jobID, args, class, deduplicationID, groupID, enqueueAt)
+		jobID, args, deduplicationID, groupID, enqueueAt)
 	_, err := r.querier.ExecContext(ctx, stmt, stmtArgs...)
 	if err != nil {
 		return err
@@ -57,7 +57,6 @@ func (r *Repository) FindJob(ctx context.Context, queue string, jobID string) (*
 	if err := row.Scan(
 		&job.SecID,
 		&job.JobID,
-		&job.Class,
 		&job.Content,
 		&job.DeduplicationID,
 		&job.GroupID,
@@ -88,7 +87,6 @@ func (r *Repository) FindJobs(ctx context.Context, queue string, limit int64) ([
 		if err := rows.Scan(
 			&job.SecID,
 			&job.JobID,
-			&job.Class,
 			&job.Content,
 			&job.DeduplicationID,
 			&job.GroupID,

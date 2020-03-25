@@ -85,8 +85,8 @@ type SQLTemplate interface {
 	NewFindJobDML(queueRawName string, jobID string) (string, []interface{})
 	NewFindJobsDML(queueRawName string, limit int64) (string, []interface{})
 	NewHideJobDML(queueRawName string, jobID string, oldRetryCount, oldInvisibleUntil, invisibleTime int64) (string, []interface{})
-	NewEnqueueJobDML(queueRawName, jobID, args string, class, deduplicationID, groupID *string, delaySeconds int64) (string, []interface{})
-	NewEnqueueJobWithTimeDML(queueRawName, jobID, args string, class, deduplicationID, groupID *string, enqueueAt int64) (string, []interface{})
+	NewEnqueueJobDML(queueRawName, jobID, args string, deduplicationID, groupID *string, delaySeconds int64) (string, []interface{})
+	NewEnqueueJobWithTimeDML(queueRawName, jobID, args string, deduplicationID, groupID *string, enqueueAt int64) (string, []interface{})
 	NewDeleteJobDML(queueRawName, jobID string) (string, []interface{})
 	NewUpdateJobByVisibilityTimeoutDML(queueRawName string, jobID string, visibilityTimeout int64) (string, []interface{})
 
@@ -141,7 +141,7 @@ func (c *Connector) Subscribe(ctx context.Context, input *jobworker.SubscribeInp
 func (c *Connector) Enqueue(ctx context.Context, input *jobworker.EnqueueInput) (*jobworker.EnqueueOutput, error) {
 	repo := NewRepository(c.DB, c.SQLTemplate)
 
-	class, deduplicationID, groupID, delaySeconds := extractMetadata(input.Metadata)
+	deduplicationID, groupID, delaySeconds := extractMetadata(input.Metadata)
 
 	var jobID string
 	_, err := c.Retryer.Do(ctx, func(ctx context.Context) error {
@@ -157,7 +157,6 @@ func (c *Connector) Enqueue(ctx context.Context, input *jobworker.EnqueueInput) 
 			queue.RawName,
 			jobID,
 			input.Content,
-			class,
 			deduplicationID,
 			groupID,
 			delaySeconds,
@@ -183,21 +182,18 @@ func (c *Connector) EnqueueBatch(ctx context.Context, input *jobworker.EnqueueBa
 		if err != nil {
 			return err
 		}
-		return c.enqueueJobBatch(ctx, queue, input.Id2Content, input.Metadata)
+		return c.enqueueJobBatch(ctx, queue, input.Entries)
 
 	}, func(err error) bool {
 		return c.IsDeadlockDetected(err)
 	})
-
 	if err != nil {
 		return nil, err
 	}
-
 	var ids []string
-	for id := range input.Id2Content {
-		ids = append(ids, id)
+	for _, entry := range input.Entries {
+		ids = append(ids, entry.ID)
 	}
-
 	return &jobworker.EnqueueBatchOutput{
 		Successful: ids,
 	}, nil
@@ -210,7 +206,8 @@ func (c *Connector) CompleteJob(ctx context.Context, input *jobworker.CompleteJo
 		if err != nil {
 			return err
 		}
-		err = repo.DeleteJob(ctx, queue.RawName, input.Job.Metadata["JobID"])
+		rawJob := input.Job.Raw.(*Job)
+		err = repo.DeleteJob(ctx, queue.RawName, rawJob.JobID)
 		if err != nil {
 			return err
 		}
@@ -289,7 +286,6 @@ func (c *Connector) moveJobBatch(ctx context.Context, from, to *QueueAttribute, 
 				to.RawName,
 				job.JobID,
 				job.Content,
-				job.Class,
 				job.DeduplicationID,
 				job.GroupID,
 				job.EnqueueAt,
@@ -362,13 +358,9 @@ func (c *Connector) grabJobs(ctx context.Context,
 }
 
 func extractMetadata(metadata map[string]string) (
-	class *string,
 	deduplicationID *string,
 	groupID *string,
 	delaySeconds int64) {
-	if v, ok := metadata["Class"]; ok && v != "" {
-		class = &v
-	}
 	if v, ok := metadata["DeduplicationID"]; ok && v != "" {
 		deduplicationID = &v
 	}
@@ -384,20 +376,15 @@ func extractMetadata(metadata map[string]string) (
 	return
 }
 
-func (c *Connector) enqueueJobBatch(ctx context.Context, queue *QueueAttribute, id2content map[string]string, metadata map[string]string) error {
-
-	class, deduplicationID, groupID, delaySeconds := extractMetadata(metadata)
-
+func (c *Connector) enqueueJobBatch(ctx context.Context, queue *QueueAttribute, entries []*jobworker.EnqueueBatchEntry) error {
 	return withTransaction(c.DB, func(tx *sql.Tx) error {
 		repo := NewRepository(tx, c.SQLTemplate)
-		for _, content := range id2content {
-			jobID := newJobID()
-
+		for _, entry := range entries {
+			deduplicationID, groupID, delaySeconds := extractMetadata(entry.Metadata)
 			err := repo.EnqueueJob(ctx,
 				queue.RawName,
-				jobID,
-				content,
-				class,
+				newJobID(),
+				entry.Content,
 				deduplicationID,
 				groupID,
 				delaySeconds,
@@ -408,7 +395,6 @@ func (c *Connector) enqueueJobBatch(ctx context.Context, queue *QueueAttribute, 
 				}
 				return err
 			}
-
 		}
 		return nil
 	})
@@ -475,7 +461,6 @@ func (c *Connector) redriveJobBatch(ctx context.Context, from, to *QueueAttribut
 			to.RawName,
 			job.JobID,
 			job.Content,
-			job.Class,
 			job.DeduplicationID,
 			job.GroupID,
 			delaySeconds,
