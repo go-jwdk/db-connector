@@ -100,21 +100,21 @@ func Open(s *Setting) (*internal.Connector, error) {
 type SQLTemplateForMySQL struct {
 }
 
-func (SQLTemplateForMySQL) NewFindJobDML(queueRawName string, jobID string) (string, []interface{}) {
+func (SQLTemplateForMySQL) NewFindJobDML(table string, jobID string) (stmt string, args []interface{}) {
 	query := `
 SELECT * FROM %s_%s WHERE job_id=?
 `
-	return fmt.Sprintf(query, internal.PackageName, queueRawName), []interface{}{jobID}
+	return fmt.Sprintf(query, internal.PackageName, table), []interface{}{jobID}
 }
 
-func (SQLTemplateForMySQL) NewFindJobsDML(queueRawName string, limit int64) (stmt string, args []interface{}) {
+func (SQLTemplateForMySQL) NewFindJobsDML(table string, limit int64) (stmt string, args []interface{}) {
 	query := `
 SELECT * FROM %s_%s WHERE invisible_until <= UNIX_TIMESTAMP(NOW()) ORDER BY sec_id DESC LIMIT %d
 `
-	return fmt.Sprintf(query, internal.PackageName, queueRawName, limit), []interface{}{}
+	return fmt.Sprintf(query, internal.PackageName, table, limit), []interface{}{}
 }
 
-func (SQLTemplateForMySQL) NewHideJobDML(queueRawName string, jobID string, oldRetryCount, oldInvisibleUntil, invisibleTime int64) (stmt string, args []interface{}) {
+func (SQLTemplateForMySQL) NewHideJobDML(table string, jobID string, oldRetryCount, oldInvisibleUntil, invisibleTime int64) (stmt string, args []interface{}) {
 	query := `
 UPDATE %s_%s
 SET retry_count=retry_count+1, invisible_until=UNIX_TIMESTAMP(NOW())+?
@@ -123,55 +123,55 @@ WHERE
   retry_count=? AND
   invisible_until=?
 `
-	return fmt.Sprintf(query, internal.PackageName, queueRawName), []interface{}{invisibleTime, jobID, oldRetryCount, oldInvisibleUntil}
+	return fmt.Sprintf(query, internal.PackageName, table), []interface{}{invisibleTime, jobID, oldRetryCount, oldInvisibleUntil}
 }
 
-func (SQLTemplateForMySQL) NewEnqueueJobDML(queueRawName, jobID, args string, class, deduplicationID, groupID *string, delaySeconds int64) (string, []interface{}) {
+func (SQLTemplateForMySQL) NewEnqueueJobDML(table, jobID, content string, deduplicationID, groupID *string, delaySeconds int64) (string, []interface{}) {
 	query := `
-INSERT INTO %s_%s (job_id, class, args, deduplication_id, group_id, retry_count, invisible_until, enqueue_at)
-VALUES (?, ?, ?, ?, ?, 0, UNIX_TIMESTAMP(NOW()) + ?, UNIX_TIMESTAMP(NOW()) ))
+INSERT INTO %s_%s (job_id, content, deduplication_id, group_id, retry_count, invisible_until, enqueue_at)
+VALUES (?, ?, ?, ?, 0, UNIX_TIMESTAMP(NOW()) + ?, UNIX_TIMESTAMP(NOW()) ))
 `
-	return fmt.Sprintf(query, internal.PackageName, queueRawName), []interface{}{jobID, class, args, deduplicationID, groupID}
+	return fmt.Sprintf(query, internal.PackageName, table), []interface{}{jobID, content, deduplicationID, groupID}
 }
 
-func (SQLTemplateForMySQL) NewEnqueueJobWithTimeDML(queueRawName, jobID, args string, class, deduplicationID, groupID *string, enqueueAt int64) (string, []interface{}) {
+func (SQLTemplateForMySQL) NewEnqueueJobWithTimeDML(table, jobID, content string, deduplicationID, groupID *string, enqueueAt int64) (string, []interface{}) {
 	query := `
-INSERT INTO %s_%s (job_id, class, args, deduplication_id, group_id, retry_count, invisible_until, enqueue_at) VALUES (?, ?, ?, ?, ?, 0, 0, ?)
+INSERT INTO %s_%s (job_id, content, deduplication_id, group_id, retry_count, invisible_until, enqueue_at) VALUES (?, ?, ?, ?, ?, 0, 0, ?)
 `
-	return fmt.Sprintf(query, internal.PackageName, queueRawName), []interface{}{jobID, class, args, deduplicationID, groupID, enqueueAt}
+	return fmt.Sprintf(query, internal.PackageName, table), []interface{}{jobID, content, deduplicationID, groupID, enqueueAt}
 }
 
-func (SQLTemplateForMySQL) NewDeleteJobDML(queueRawName, jobID string) (stmt string, args []interface{}) {
+func (SQLTemplateForMySQL) NewDeleteJobDML(table, jobID string) (stmt string, args []interface{}) {
 	query := `
 DELETE FROM %s_%s WHERE job_id = ?
 `
-	return fmt.Sprintf(query, internal.PackageName, queueRawName),
+	return fmt.Sprintf(query, internal.PackageName, table),
 		[]interface{}{jobID}
 }
 
-func (SQLTemplateForMySQL) NewFindQueueAttributeDML(queueName string) (stmt string, args []interface{}) {
+func (SQLTemplateForMySQL) NewFindQueueAttributeDML(queue string) (stmt string, args []interface{}) {
 	query := `
 SELECT * FROM %s_queue_setting WHERE name=?
 `
 	return fmt.Sprintf(query, internal.PackageName),
-		[]interface{}{queueName}
+		[]interface{}{queue}
 }
 
-func (SQLTemplateForMySQL) NewUpdateJobByVisibilityTimeoutDML(queueRawName string, jobID string, visibilityTimeout int64) (stmt string, args []interface{}) {
+func (SQLTemplateForMySQL) NewUpdateJobByVisibilityTimeoutDML(table string, jobID string, visibilityTimeout int64) (stmt string, args []interface{}) {
 	query := `
 UPDATE %s_%s SET visible_after = UNIX_TIMESTAMP(NOW()) + ? WHERE job_id = ?
 `
-	return fmt.Sprintf(query, internal.PackageName, queueRawName), []interface{}{visibilityTimeout, jobID}
+	return fmt.Sprintf(query, internal.PackageName, table), []interface{}{visibilityTimeout, jobID}
 }
 
-func (SQLTemplateForMySQL) NewAddQueueAttributeDML(queueName, queueRawName string, delaySeconds, maximumMessageSize, messageRetentionPeriod int64, deadLetterTarget string, maxReceiveCount, visibilityTimeout int64) (string, []interface{}) {
+func (SQLTemplateForMySQL) NewAddQueueAttributeDML(queue, table string, delaySeconds, maximumMessageSize, messageRetentionPeriod int64, deadLetterTarget string, maxReceiveCount, visibilityTimeout int64) (string, []interface{}) {
 	query := `
 INSERT INTO %s_queue_setting (name, visibility_timeout, delay_seconds, maximum_message_size, message_retention_period, dead_letter_target, max_receive_count) VALUES (?, ?, ?, ?, ?, ?, ?)
 `
-	return fmt.Sprintf(query, internal.PackageName), []interface{}{queueName, visibilityTimeout, delaySeconds, maximumMessageSize, messageRetentionPeriod, deadLetterTarget, maxReceiveCount}
+	return fmt.Sprintf(query, internal.PackageName), []interface{}{queue, visibilityTimeout, delaySeconds, maximumMessageSize, messageRetentionPeriod, deadLetterTarget, maxReceiveCount}
 }
 
-func (SQLTemplateForMySQL) NewUpdateQueueAttributeDML(visibilityTimeout, delaySeconds, maximumMessageSize, messageRetentionPeriod *int64, deadLetterTarget *string, maxReceiveCount *int64, queueName string) (string, []interface{}) {
+func (SQLTemplateForMySQL) NewUpdateQueueAttributeDML(visibilityTimeout, delaySeconds, maximumMessageSize, messageRetentionPeriod *int64, deadLetterTarget *string, maxReceiveCount *int64, queue string) (string, []interface{}) {
 	query := `
 UPDATE %s_queue_setting SET %s WHERE name = ?
 `
@@ -203,7 +203,7 @@ UPDATE %s_queue_setting SET %s WHERE name = ?
 		sets = append(sets, "max_receive_count=?")
 		args = append(args, *maxReceiveCount)
 	}
-	args = append(args, queueName)
+	args = append(args, queue)
 	return fmt.Sprintf(query, internal.PackageName, strings.Join(sets, ",")), args
 }
 
@@ -222,13 +222,12 @@ CREATE TABLE IF NOT EXISTS %s_queue_setting (
 	return fmt.Sprintf(query, internal.PackageName)
 }
 
-func (SQLTemplateForMySQL) NewCreateQueueDDL(queueRawName string) string {
+func (SQLTemplateForMySQL) NewCreateQueueDDL(table string) string {
 	query := `
 CREATE TABLE IF NOT EXISTS %s (
         sec_id            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
         job_id            VARCHAR(255) NOT NULL,
-        class             VARCHAR(255),
-        args              TEXT,
+        content           TEXT,
         deduplication_id  VARCHAR(255),
         group_id          VARCHAR(255),
         invisible_until   BIGINT UNSIGNED NOT NULL,
@@ -238,9 +237,7 @@ CREATE TABLE IF NOT EXISTS %s (
 		PRIMARY KEY (sec_id),
         UNIQUE(deduplication_id),
 );
-CREATE INDEX IF NOT EXISTS %s_idx_invisible_until_class ON %s (invisible_until, class);
 CREATE INDEX IF NOT EXISTS %s_idx_invisible_until_retry_count ON %s (invisible_until, retry_count);
 `
-	tablaName := fmt.Sprintf("%s_%s", internal.PackageName, queueRawName)
-	return fmt.Sprintf(query, tablaName, tablaName, tablaName, tablaName, tablaName)
+	return fmt.Sprintf(query, table, table, table)
 }

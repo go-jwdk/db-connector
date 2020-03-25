@@ -174,36 +174,33 @@ func (SQLTemplateForSQLite3) NewUpdateQueueAttributeDML(visibilityTimeout, delay
 	query := `
 UPDATE %s_queue_attribute SET %s WHERE raw_name = ?
 `
-	var (
-		sets []string
-		vals []interface{}
-	)
+	var sets []string
 	if visibilityTimeout != nil {
 		sets = append(sets, "visibility_timeout=?")
-		vals = append(vals, *visibilityTimeout)
+		args = append(args, *visibilityTimeout)
 	}
 	if delaySeconds != nil {
 		sets = append(sets, "delay_seconds=?")
-		vals = append(vals, *delaySeconds)
+		args = append(args, *delaySeconds)
 	}
 	if maximumMessageSize != nil {
 		sets = append(sets, "maximum_message_size=?")
-		vals = append(vals, *maximumMessageSize)
+		args = append(args, *maximumMessageSize)
 	}
 	if messageRetentionPeriod != nil {
 		sets = append(sets, "message_retention_period=?")
-		vals = append(vals, *messageRetentionPeriod)
+		args = append(args, *messageRetentionPeriod)
 	}
 	if deadLetterTarget != nil {
 		sets = append(sets, "dead_letter_target=?")
-		vals = append(vals, *deadLetterTarget)
+		args = append(args, *deadLetterTarget)
 	}
 	if maxReceiveCount != nil {
 		sets = append(sets, "max_receive_count=?")
-		vals = append(vals, *maxReceiveCount)
+		args = append(args, *maxReceiveCount)
 	}
-	vals = append(vals, table)
-	return fmt.Sprintf(query, internal.PackageName, strings.Join(sets, ",")), vals
+	args = append(args, table)
+	return fmt.Sprintf(query, internal.PackageName, strings.Join(sets, ",")), args
 }
 
 func (SQLTemplateForSQLite3) NewCreateQueueAttributeDDL() string {
@@ -223,7 +220,7 @@ CREATE TABLE IF NOT EXISTS %s_queue_attribute (
 	return fmt.Sprintf(query, internal.PackageName)
 }
 
-func (SQLTemplateForSQLite3) NewCreateQueueDDL(queueRawName string) string {
+func (SQLTemplateForSQLite3) NewCreateQueueDDL(table string) string {
 	query := `
 CREATE TABLE IF NOT EXISTS %s (
         sec_id            INTEGER PRIMARY KEY,
@@ -238,5 +235,5 @@ CREATE TABLE IF NOT EXISTS %s (
 );
 CREATE INDEX IF NOT EXISTS %s_idx_invisible_until_retry_count ON %s (invisible_until, retry_count);
 `
-	return fmt.Sprintf(query, queueRawName, queueRawName, queueRawName)
+	return fmt.Sprintf(query, table, table, table)
 }
