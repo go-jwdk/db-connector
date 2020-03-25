@@ -41,7 +41,7 @@ func main() {
 		for {
 			_, err := conn.Enqueue(context.Background(), &jobworker.EnqueueInput{
 				Queue:   "test",
-				Payload: "hello: " + uuid.NewV4().String(),
+				Content: "hello: " + uuid.NewV4().String(),
 			})
 			if err != nil {
 				fmt.Println("could not enqueue a job", err)
@@ -76,13 +76,12 @@ func main() {
 
 func printJob(job *jobworker.Job) {
 	fmt.Println("# ----------")
-	payload := job.Payload()
-	for k, v := range payload.Metadata {
+	for k, v := range job.Metadata {
 		fmt.Println(k, ":", v)
 	}
 	fmt.Println("# ----------")
-	fmt.Println("Content :", payload.Content)
+	fmt.Println("Content :", job.Content)
 	fmt.Println("# ----------")
-	fmt.Println("Queue :", job.QueueName())
+	fmt.Println("Queue :", job.QueueName)
 	fmt.Println("# ----------")
 }
