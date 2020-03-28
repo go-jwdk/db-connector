@@ -121,10 +121,10 @@ func (r *Repository) UpdateJobVisibility(ctx context.Context, queueRawName, jobI
 	return affected == 1, nil
 }
 
-func (r *Repository) FindQueueAttribute(ctx context.Context, queue string) (*QueueAttribute, error) {
+func (r *Repository) FindQueueAttribute(ctx context.Context, queue string) (*QueueAttributes, error) {
 	stmt, args := r.tmpl.NewFindQueueAttributeDML(queue)
 	row := r.querier.QueryRowContext(ctx, stmt, args...)
-	var q QueueAttribute
+	var q QueueAttributes
 	err := row.Scan(
 		&q.Name,
 		&q.RawName,

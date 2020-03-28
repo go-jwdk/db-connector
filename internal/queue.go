@@ -1,8 +1,6 @@
 package internal
 
-import "time"
-
-type QueueAttribute struct {
+type QueueAttributes struct {
 	Name                   string
 	RawName                string
 	DelaySeconds           int64
@@ -11,10 +9,8 @@ type QueueAttribute struct {
 	MessageRetentionPeriod int64
 	DeadLetterTarget       string
 	MaxReceiveCount        int64
-
-	CachePeriod time.Time
 }
 
-func (q QueueAttribute) HasDeadLetter() bool {
+func (q QueueAttributes) HasDeadLetter() bool {
 	return q.DeadLetterTarget != ""
 }

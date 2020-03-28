@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
+
+	"github.com/vvatanabe/expiremap"
 
 	"github.com/go-jwdk/jobworker"
 	"github.com/vvatanabe/goretryer/exponential"
@@ -16,10 +17,9 @@ import (
 )
 
 const (
-	PackageName = "jwdk"
-)
+	PackageName = "db-connector"
+	LogPrefix   = "[" + PackageName + "]"
 
-const (
 	ConnAttributeNameDSN             = "DSN"
 	ConnAttributeNameMaxOpenConns    = "MaxOpenConns"
 	ConnAttributeNameMaxIdleConns    = "MaxMaxIdleConns"
@@ -81,23 +81,6 @@ func ConnAttrsToValues(attrs map[string]interface{}) *Values {
 	return &values
 }
 
-type SQLTemplate interface {
-	NewFindJobDML(queueRawName string, jobID string) (string, []interface{})
-	NewFindJobsDML(queueRawName string, limit int64) (string, []interface{})
-	NewHideJobDML(queueRawName string, jobID string, oldRetryCount, oldInvisibleUntil, invisibleTime int64) (string, []interface{})
-	NewEnqueueJobDML(queueRawName, jobID, args string, deduplicationID, groupID *string, delaySeconds int64) (string, []interface{})
-	NewEnqueueJobWithTimeDML(queueRawName, jobID, args string, deduplicationID, groupID *string, enqueueAt int64) (string, []interface{})
-	NewDeleteJobDML(queueRawName, jobID string) (string, []interface{})
-	NewUpdateJobByVisibilityTimeoutDML(queueRawName string, jobID string, visibilityTimeout int64) (string, []interface{})
-
-	NewAddQueueAttributeDML(queueName, queueRawName string, delaySeconds, maximumMessageSize, messageRetentionPeriod int64, deadLetterTarget string, maxReceiveCount, visibilityTimeout int64) (string, []interface{})
-	NewUpdateQueueAttributeDML(visibilityTimeout, delaySeconds, maximumMessageSize, messageRetentionPeriod *int64, deadLetterTarget *string, maxReceiveCount *int64, queueRawName string) (string, []interface{})
-	NewFindQueueAttributeDML(queueName string) (string, []interface{})
-
-	NewCreateQueueAttributeDDL() string
-	NewCreateQueueDDL(queueRawName string) string
-}
-
 type Connector struct {
 	ConnName           string
 	DB                 *sql.DB
@@ -105,8 +88,7 @@ type Connector struct {
 	IsUniqueViolation  func(err error) bool
 	IsDeadlockDetected func(err error) bool
 
-	name2QueueDef       sync.Map
-	queueDefCachePeriod int64
+	name2Queue expiremap.Map
 
 	loggerFunc jobworker.LoggerFunc
 
@@ -120,7 +102,7 @@ func (c *Connector) Name() string {
 func (c *Connector) Subscribe(ctx context.Context, input *jobworker.SubscribeInput) (*jobworker.SubscribeOutput, error) {
 	var sub *Subscription
 	_, err := c.Retryer.Do(ctx, func(ctx context.Context) error {
-		queue, err := c.resolveQueue(ctx, input.Queue)
+		queue, err := c.resolveQueueAttributes(ctx, input.Queue)
 		if err != nil {
 			return err
 		}
@@ -140,19 +122,13 @@ func (c *Connector) Subscribe(ctx context.Context, input *jobworker.SubscribeInp
 
 func (c *Connector) Enqueue(ctx context.Context, input *jobworker.EnqueueInput) (*jobworker.EnqueueOutput, error) {
 	repo := NewRepository(c.DB, c.SQLTemplate)
-
 	deduplicationID, groupID, delaySeconds := extractMetadata(input.Metadata)
-
-	var jobID string
 	_, err := c.Retryer.Do(ctx, func(ctx context.Context) error {
-
-		queue, err := c.resolveQueue(ctx, input.Queue)
+		queue, err := c.resolveQueueAttributes(ctx, input.Queue)
 		if err != nil {
 			return err
 		}
-
-		jobID = newJobID()
-
+		jobID := newJobID()
 		return repo.EnqueueJob(ctx,
 			queue.RawName,
 			jobID,
@@ -161,11 +137,9 @@ func (c *Connector) Enqueue(ctx context.Context, input *jobworker.EnqueueInput) 
 			groupID,
 			delaySeconds,
 		)
-
 	}, func(err error) bool {
 		return c.IsDeadlockDetected(err)
 	})
-
 	if err != nil {
 		if c.IsUniqueViolation(err) {
 			return nil, jobworker.ErrJobDuplicationDetected
@@ -178,7 +152,7 @@ func (c *Connector) Enqueue(ctx context.Context, input *jobworker.EnqueueInput) 
 
 func (c *Connector) EnqueueBatch(ctx context.Context, input *jobworker.EnqueueBatchInput) (*jobworker.EnqueueBatchOutput, error) {
 	_, err := c.Retryer.Do(ctx, func(ctx context.Context) error {
-		queue, err := c.resolveQueue(ctx, input.Queue)
+		queue, err := c.resolveQueueAttributes(ctx, input.Queue)
 		if err != nil {
 			return err
 		}
@@ -202,7 +176,7 @@ func (c *Connector) EnqueueBatch(ctx context.Context, input *jobworker.EnqueueBa
 func (c *Connector) CompleteJob(ctx context.Context, input *jobworker.CompleteJobInput) (*jobworker.CompleteJobOutput, error) {
 	repo := NewRepository(c.DB, c.SQLTemplate)
 	_, err := c.Retryer.Do(ctx, func(ctx context.Context) error {
-		queue, err := c.resolveQueue(ctx, input.Job.QueueName)
+		queue, err := c.resolveQueueAttributes(ctx, input.Job.QueueName)
 		if err != nil {
 			return err
 		}
@@ -241,31 +215,24 @@ var (
 	ErrNoFoundQueue = fmt.Errorf("no found queue")
 )
 
-func (c *Connector) resolveQueue(ctx context.Context, queueName string) (*QueueAttribute, error) {
-
-	v, ok := c.name2QueueDef.Load(queueName)
-	if !ok || v.(*QueueAttribute).CachePeriod.Before(time.Now()) {
-
+func (c *Connector) resolveQueueAttributes(ctx context.Context, name string) (*QueueAttributes, error) {
+	v, ok := c.name2Queue.Load(name)
+	if !ok || v == nil {
 		repo := NewRepository(c.DB, c.SQLTemplate)
-
-		q, err := repo.FindQueueAttribute(ctx, queueName)
+		q, err := repo.FindQueueAttribute(ctx, name)
 		if isErrNoRows(err) {
 			return nil, ErrNoFoundQueue
 		}
-
 		if err != nil {
 			return nil, err
 		}
-
-		q.CachePeriod = time.Now().Add(time.Duration(c.queueDefCachePeriod) * time.Second)
-
 		v = q
-		c.name2QueueDef.Store(queueName, v)
+		c.name2Queue.StoreWithExpire(name, v, time.Minute)
 	}
-	return v.(*QueueAttribute), nil
+	return v.(*QueueAttributes), nil
 }
 
-func (c *Connector) cleanJobBatch(ctx context.Context, queue *QueueAttribute, jobs []*Job) error {
+func (c *Connector) cleanJobBatch(ctx context.Context, queue *QueueAttributes, jobs []*Job) error {
 	return withTransaction(c.DB, func(tx *sql.Tx) error {
 		repo := NewRepository(tx, c.SQLTemplate)
 		for _, job := range jobs {
@@ -278,7 +245,7 @@ func (c *Connector) cleanJobBatch(ctx context.Context, queue *QueueAttribute, jo
 	})
 }
 
-func (c *Connector) moveJobBatch(ctx context.Context, from, to *QueueAttribute, jobs []*Job) error {
+func (c *Connector) moveJobBatch(ctx context.Context, from, to *QueueAttributes, jobs []*Job) error {
 	return withTransaction(c.DB, func(tx *sql.Tx) error {
 		repo := NewRepository(tx, c.SQLTemplate)
 		for _, job := range jobs {
@@ -376,7 +343,7 @@ func extractMetadata(metadata map[string]string) (
 	return
 }
 
-func (c *Connector) enqueueJobBatch(ctx context.Context, queue *QueueAttribute, entries []*jobworker.EnqueueBatchEntry) error {
+func (c *Connector) enqueueJobBatch(ctx context.Context, queue *QueueAttributes, entries []*jobworker.EnqueueBatchEntry) error {
 	return withTransaction(c.DB, func(tx *sql.Tx) error {
 		repo := NewRepository(tx, c.SQLTemplate)
 		for _, entry := range entries {
@@ -407,7 +374,7 @@ func newJobID() string {
 func (c *Connector) ChangeJobVisibility(ctx context.Context, input *ChangeJobVisibilityInput) (*ChangeJobVisibilityOutput, error) {
 	repo := NewRepository(c.DB, c.SQLTemplate)
 	_, err := c.Retryer.Do(ctx, func(ctx context.Context) error {
-		queue, err := c.resolveQueue(ctx, input.Job.QueueName)
+		queue, err := c.resolveQueueAttributes(ctx, input.Job.QueueName)
 		if err != nil {
 			return err
 		}
@@ -428,11 +395,11 @@ func (c *Connector) ChangeJobVisibility(ctx context.Context, input *ChangeJobVis
 
 func (c *Connector) RedriveJob(ctx context.Context, input *RedriveJobInput) (*RedriveJobOutput, error) {
 	_, err := c.Retryer.Do(ctx, func(ctx context.Context) error {
-		from, err := c.resolveQueue(ctx, input.From)
+		from, err := c.resolveQueueAttributes(ctx, input.From)
 		if err != nil {
 			return err
 		}
-		to, err := c.resolveQueue(ctx, input.To)
+		to, err := c.resolveQueueAttributes(ctx, input.To)
 		if err != nil {
 			return err
 		}
@@ -444,7 +411,7 @@ func (c *Connector) RedriveJob(ctx context.Context, input *RedriveJobInput) (*Re
 	return &RedriveJobOutput{}, err
 }
 
-func (c *Connector) redriveJobBatch(ctx context.Context, from, to *QueueAttribute, jobID string, delaySeconds int64) error {
+func (c *Connector) redriveJobBatch(ctx context.Context, from, to *QueueAttributes, jobID string, delaySeconds int64) error {
 	repo := NewRepository(c.DB, c.SQLTemplate)
 	job, err := repo.FindJob(ctx, from.RawName, jobID)
 	if err != nil {
@@ -590,7 +557,7 @@ func (c *Connector) UpdateQueue(ctx context.Context, input *UpdateQueueInput) (*
 	v := queueAttrsToValues(input.Attributes)
 
 	_, err := c.Retryer.Do(ctx, func(ctx context.Context) error {
-		queue, err := c.resolveQueue(ctx, input.Name)
+		queue, err := c.resolveQueueAttributes(ctx, input.Name)
 		if err != nil {
 			return err
 		}

@@ -24,7 +24,7 @@ const (
 	defaultMaxNumberOfJobs = int64(1)
 )
 
-func NewSubscription(queueAttr *QueueAttribute,
+func NewSubscription(queueAttr *QueueAttributes,
 	conn *Connector, meta map[string]string) *Subscription {
 	pollingInterval, visibilityTimeout, maxNumberOfMessages := extractSubMetadata(meta, queueAttr)
 	return &Subscription{
@@ -37,7 +37,7 @@ func NewSubscription(queueAttr *QueueAttribute,
 	}
 }
 
-func extractSubMetadata(meta map[string]string, queueAttr *QueueAttribute) (
+func extractSubMetadata(meta map[string]string, queueAttr *QueueAttributes) (
 	pollingInterval time.Duration,
 	visibilityTimeout int64,
 	maxNumberOfMessages int64,
@@ -70,7 +70,7 @@ func extractSubMetadata(meta map[string]string, queueAttr *QueueAttribute) (
 }
 
 type Subscription struct {
-	queueAttr *QueueAttribute
+	queueAttr *QueueAttributes
 	conn      *Connector
 
 	pollingInterval   time.Duration
@@ -117,7 +117,7 @@ func (s *Subscription) writeChan(ch chan *Job) {
 			s.queueAttr.MaxReceiveCount, s.maxNumberOfJobs, s.visibilityTimeout,
 			func(deadJobs []*Job) error {
 				if s.queueAttr.HasDeadLetter() {
-					deadLetterQueue, err := s.conn.resolveQueue(ctx, s.queueAttr.DeadLetterTarget)
+					deadLetterQueue, err := s.conn.resolveQueueAttributes(ctx, s.queueAttr.DeadLetterTarget)
 					if err != nil {
 						return err
 					}
