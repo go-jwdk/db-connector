@@ -17,7 +17,9 @@ var isUniqueViolation = func(err error) bool {
 		return false
 	}
 	sqliteErr, ok := err.(sqlite3.Error)
-	if ok && sqliteErr.Code == sqlite3.ErrConstraint && sqliteErr.ExtendedCode == sqlite3.ErrConstraintUnique {
+	if ok &&
+		sqliteErr.Code == sqlite3.ErrConstraint &&
+		sqliteErr.ExtendedCode == sqlite3.ErrConstraintUnique {
 		return true
 	}
 	return false
@@ -25,7 +27,9 @@ var isUniqueViolation = func(err error) bool {
 
 var isDeadlockDetected = func(err error) bool {
 	sqliteErr, ok := err.(sqlite3.Error)
-	if ok && sqliteErr.Code == sqlite3.ErrBusy && sqliteErr.Code != sqlite3.ErrLocked {
+	if ok &&
+		sqliteErr.Code == sqlite3.ErrBusy &&
+		sqliteErr.Code != sqlite3.ErrLocked {
 		return true
 	}
 	return false
@@ -36,25 +40,20 @@ var provider = Provider{}
 const connName = "sqlite3"
 
 func init() {
-
 	jobworker.Register(connName, provider)
 }
 
-type Provider struct {
-}
+type Provider struct{}
 
 func (Provider) Open(attrs map[string]interface{}) (jobworker.Connector, error) {
-
 	values := internal.ConnAttrsToValues(attrs)
 	values.ApplyDefaultValues()
-
 	var s Setting
 	s.DSN = values.DSN
 	s.MaxOpenConns = values.MaxOpenConns
 	s.MaxIdleConns = values.MaxIdleConns
 	s.ConnMaxLifetime = values.ConnMaxLifetime
 	s.NumMaxRetries = values.NumMaxRetries
-
 	return Open(&s)
 }
 
@@ -67,7 +66,6 @@ type Setting struct {
 }
 
 func Open(s *Setting) (*internal.Connector, error) {
-
 	db, err := sql.Open(connName, s.DSN)
 	if err != nil {
 		return nil, err
@@ -77,12 +75,10 @@ func Open(s *Setting) (*internal.Connector, error) {
 	if s.ConnMaxLifetime != nil {
 		db.SetConnMaxLifetime(*s.ConnMaxLifetime)
 	}
-
 	var er exponential.Retryer
 	if s.NumMaxRetries != nil {
 		er.NumMaxRetries = *s.NumMaxRetries
 	}
-
 	return &internal.Connector{
 		ConnName:           connName,
 		DB:                 db,
