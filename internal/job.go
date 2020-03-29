@@ -36,6 +36,8 @@ const (
 	MetadataKeyInvisibleUntil  = "InvisibleUntil"
 	MetadataKeyRetryCount      = "RetryCount"
 	MetadataKeyEnqueueAt       = "EnqueueAt"
+
+	MetadataKeyDelaySeconds = "DelaySeconds"
 )
 
 func newMetadata(job *Job) map[string]string {

@@ -3,7 +3,6 @@ package internal
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strconv"
 	"sync/atomic"
 	"time"
@@ -31,6 +30,7 @@ func NewSubscription(queueAttr *QueueAttributes,
 		pollingInterval:   pollingInterval,
 		queueAttr:         queueAttr,
 		conn:              conn,
+		grabJobs:          conn.grabJobs,
 		visibilityTimeout: visibilityTimeout,
 		maxNumberOfJobs:   maxNumberOfMessages,
 		queue:             make(chan *jobworker.Job),
@@ -77,7 +77,7 @@ type Subscription struct {
 	visibilityTimeout int64
 	maxNumberOfJobs   int64
 
-	grabJobs func(ctx context.Context, queueRawName string, maxReceiveCount, maxNumberOfJobs, visibilityTimeout int64, handleDeadJob func(deadJobs []*Job) error) ([]*Job, error)
+	grabJobs func(ctx context.Context, queueAttr *QueueAttributes, maxNumberOfJobs, visibilityTimeout int64) ([]*Job, error)
 	queue    chan *jobworker.Job
 	state    int32
 }
@@ -112,27 +112,7 @@ func (s *Subscription) writeChan(ch chan *Job) {
 			return
 		}
 		ctx := context.Background()
-		grabbedJobs, err := s.grabJobs(ctx,
-			s.queueAttr.RawName,
-			s.queueAttr.MaxReceiveCount, s.maxNumberOfJobs, s.visibilityTimeout,
-			func(deadJobs []*Job) error {
-				if s.queueAttr.HasDeadLetter() {
-					deadLetterQueue, err := s.conn.resolveQueueAttributes(ctx, s.queueAttr.DeadLetterTarget)
-					if err != nil {
-						return err
-					}
-					err = s.conn.moveJobBatch(ctx, s.queueAttr, deadLetterQueue, deadJobs)
-					if err != nil {
-						return fmt.Errorf("could not move job batch: %s", err)
-					}
-				} else {
-					err := s.conn.cleanJobBatch(ctx, s.queueAttr, deadJobs)
-					if err != nil {
-						return fmt.Errorf("could not clean job batch: %s", err)
-					}
-				}
-				return nil
-			})
+		grabbedJobs, err := s.grabJobs(ctx, s.queueAttr, s.maxNumberOfJobs, s.visibilityTimeout)
 		if err != nil {
 			close(ch)
 			return
