@@ -17,8 +17,9 @@ import (
 )
 
 const (
-	PackageName = "db-connector"
-	LogPrefix   = "[" + PackageName + "]"
+	TablePrefix = "jwdk"
+	PackageName = ""
+	LogPrefix   = "[" + TablePrefix + "]"
 
 	ConnAttributeNameDSN             = "DSN"
 	ConnAttributeNameMaxOpenConns    = "MaxOpenConns"
@@ -105,7 +106,7 @@ func (c *Connector) Subscribe(ctx context.Context, input *jobworker.SubscribeInp
 	var sub *Subscription
 	queue, err := c.resolveQueueAttributes(ctx, input.Queue)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not resolve queue: %w", err)
 	}
 	sub = NewSubscription(queue, c, input.Metadata)
 	go sub.Start()
@@ -231,7 +232,7 @@ func (c *Connector) resolveQueueAttributes(ctx context.Context, name string) (*Q
 			return nil, ErrNoFoundQueue
 		}
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("could not find queue %w", err)
 		}
 		v = q
 		// TODO Expiration date can be specified from outside
@@ -306,7 +307,7 @@ func (c *Connector) grabJobs(ctx context.Context,
 	)
 
 	for _, job := range jobs {
-		if job.RetryCount >= queueAttr.MaxReceiveCount {
+		if job.RetryCount > queueAttr.MaxReceiveCount {
 			deadJobs = append(deadJobs, job)
 		} else {
 			aliveJobs = append(aliveJobs, job)
@@ -540,7 +541,7 @@ func queueAttrsToValues(attrs map[string]interface{}) *values {
 
 func newQueueRawName(name string) string {
 	rawName := strings.Replace(name, ".", "_", -1)
-	return fmt.Sprintf("%s_%s", PackageName, rawName)
+	return fmt.Sprintf("%s_%s", TablePrefix, rawName)
 }
 
 func (c *Connector) CreateQueue(ctx context.Context, input *CreateQueueInput) (*CreateQueueOutput, error) {

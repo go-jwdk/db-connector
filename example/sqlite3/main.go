@@ -6,9 +6,12 @@ import (
 	"os"
 	"time"
 
+	uuid "github.com/satori/go.uuid"
+
+	"github.com/go-jwdk/db-connector/internal"
+
 	"github.com/go-jwdk/db-connector/sqlite3"
 	"github.com/go-jwdk/jobworker"
-	uuid "github.com/satori/go.uuid"
 )
 
 func main() {
@@ -37,6 +40,11 @@ func main() {
 		}
 	}()
 
+	_, err = conn.CreateQueue(context.Background(), &internal.CreateQueueInput{
+		Name:       "test",
+		Attributes: nil,
+	})
+
 	go func() {
 		for {
 			_, err := conn.Enqueue(context.Background(), &jobworker.EnqueueInput{
@@ -56,7 +64,7 @@ func main() {
 	go func() {
 		out, err := conn.Subscribe(context.Background(), &jobworker.SubscribeInput{Queue: "test"})
 		if err != nil {
-			fmt.Println("receive jobs error:", err)
+			fmt.Println("subscribe error:", err)
 		}
 		for job := range out.Subscription.Queue() {
 			printJob(job)

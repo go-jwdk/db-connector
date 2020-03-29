@@ -135,11 +135,9 @@ func (r *Repository) FindQueueAttribute(ctx context.Context, queue string) (*Que
 		&q.DeadLetterTarget,
 		&q.MaxReceiveCount,
 	)
-
 	if err != nil {
 		return nil, err
 	}
-
 	return &q, nil
 }
 

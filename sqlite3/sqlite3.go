@@ -147,7 +147,7 @@ func (SQLTemplateForSQLite3) NewFindQueueAttributeDML(table string) (stmt string
 	query := `
 SELECT * FROM %s_queue_attribute WHERE name=?
 `
-	return fmt.Sprintf(query, internal.PackageName),
+	return fmt.Sprintf(query, internal.TablePrefix),
 		[]interface{}{table}
 }
 
@@ -163,7 +163,7 @@ func (SQLTemplateForSQLite3) NewAddQueueAttributeDML(queue, table string, delayS
 INSERT INTO %s_queue_attribute (name, raw_name, visibility_timeout, delay_seconds, maximum_message_size, message_retention_period, dead_letter_target, max_receive_count)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 `
-	return fmt.Sprintf(query, internal.PackageName), []interface{}{queue, table, visibilityTimeout, delaySeconds, maximumMessageSize, messageRetentionPeriod, deadLetterTarget, maxReceiveCount}
+	return fmt.Sprintf(query, internal.TablePrefix), []interface{}{queue, table, visibilityTimeout, delaySeconds, maximumMessageSize, messageRetentionPeriod, deadLetterTarget, maxReceiveCount}
 }
 
 func (SQLTemplateForSQLite3) NewUpdateQueueAttributeDML(visibilityTimeout, delaySeconds, maximumMessageSize, messageRetentionPeriod *int64, deadLetterTarget *string, maxReceiveCount *int64, table string) (stmt string, args []interface{}) {
@@ -196,7 +196,7 @@ UPDATE %s_queue_attribute SET %s WHERE raw_name = ?
 		args = append(args, *maxReceiveCount)
 	}
 	args = append(args, table)
-	return fmt.Sprintf(query, internal.PackageName, strings.Join(sets, ",")), args
+	return fmt.Sprintf(query, internal.TablePrefix, strings.Join(sets, ",")), args
 }
 
 func (SQLTemplateForSQLite3) NewCreateQueueAttributeDDL() string {
@@ -213,7 +213,7 @@ CREATE TABLE IF NOT EXISTS %s_queue_attribute (
 		UNIQUE(name)
 		UNIQUE(raw_name)
 );`
-	return fmt.Sprintf(query, internal.PackageName)
+	return fmt.Sprintf(query, internal.TablePrefix)
 }
 
 func (SQLTemplateForSQLite3) NewCreateQueueDDL(table string) string {

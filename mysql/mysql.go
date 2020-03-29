@@ -104,14 +104,14 @@ func (SQLTemplateForMySQL) NewFindJobDML(table string, jobID string) (stmt strin
 	query := `
 SELECT * FROM %s_%s WHERE job_id=?
 `
-	return fmt.Sprintf(query, internal.PackageName, table), []interface{}{jobID}
+	return fmt.Sprintf(query, internal.TablePrefix, table), []interface{}{jobID}
 }
 
 func (SQLTemplateForMySQL) NewFindJobsDML(table string, limit int64) (stmt string, args []interface{}) {
 	query := `
 SELECT * FROM %s_%s WHERE invisible_until <= UNIX_TIMESTAMP(NOW()) ORDER BY sec_id DESC LIMIT %d
 `
-	return fmt.Sprintf(query, internal.PackageName, table, limit), []interface{}{}
+	return fmt.Sprintf(query, internal.TablePrefix, table, limit), []interface{}{}
 }
 
 func (SQLTemplateForMySQL) NewHideJobDML(table string, jobID string, oldRetryCount, oldInvisibleUntil, invisibleTime int64) (stmt string, args []interface{}) {
@@ -123,7 +123,7 @@ WHERE
   retry_count=? AND
   invisible_until=?
 `
-	return fmt.Sprintf(query, internal.PackageName, table), []interface{}{invisibleTime, jobID, oldRetryCount, oldInvisibleUntil}
+	return fmt.Sprintf(query, internal.TablePrefix, table), []interface{}{invisibleTime, jobID, oldRetryCount, oldInvisibleUntil}
 }
 
 func (SQLTemplateForMySQL) NewEnqueueJobDML(table, jobID, content string, deduplicationID, groupID *string, delaySeconds int64) (string, []interface{}) {
@@ -131,21 +131,21 @@ func (SQLTemplateForMySQL) NewEnqueueJobDML(table, jobID, content string, dedupl
 INSERT INTO %s_%s (job_id, content, deduplication_id, group_id, retry_count, invisible_until, enqueue_at)
 VALUES (?, ?, ?, ?, 0, UNIX_TIMESTAMP(NOW()) + ?, UNIX_TIMESTAMP(NOW()) ))
 `
-	return fmt.Sprintf(query, internal.PackageName, table), []interface{}{jobID, content, deduplicationID, groupID}
+	return fmt.Sprintf(query, internal.TablePrefix, table), []interface{}{jobID, content, deduplicationID, groupID}
 }
 
 func (SQLTemplateForMySQL) NewEnqueueJobWithTimeDML(table, jobID, content string, deduplicationID, groupID *string, enqueueAt int64) (string, []interface{}) {
 	query := `
 INSERT INTO %s_%s (job_id, content, deduplication_id, group_id, retry_count, invisible_until, enqueue_at) VALUES (?, ?, ?, ?, ?, 0, 0, ?)
 `
-	return fmt.Sprintf(query, internal.PackageName, table), []interface{}{jobID, content, deduplicationID, groupID, enqueueAt}
+	return fmt.Sprintf(query, internal.TablePrefix, table), []interface{}{jobID, content, deduplicationID, groupID, enqueueAt}
 }
 
 func (SQLTemplateForMySQL) NewDeleteJobDML(table, jobID string) (stmt string, args []interface{}) {
 	query := `
 DELETE FROM %s_%s WHERE job_id = ?
 `
-	return fmt.Sprintf(query, internal.PackageName, table),
+	return fmt.Sprintf(query, internal.TablePrefix, table),
 		[]interface{}{jobID}
 }
 
@@ -153,7 +153,7 @@ func (SQLTemplateForMySQL) NewFindQueueAttributeDML(queue string) (stmt string, 
 	query := `
 SELECT * FROM %s_queue_setting WHERE name=?
 `
-	return fmt.Sprintf(query, internal.PackageName),
+	return fmt.Sprintf(query, internal.TablePrefix),
 		[]interface{}{queue}
 }
 
@@ -161,14 +161,14 @@ func (SQLTemplateForMySQL) NewUpdateJobByVisibilityTimeoutDML(table string, jobI
 	query := `
 UPDATE %s_%s SET visible_after = UNIX_TIMESTAMP(NOW()) + ? WHERE job_id = ?
 `
-	return fmt.Sprintf(query, internal.PackageName, table), []interface{}{visibilityTimeout, jobID}
+	return fmt.Sprintf(query, internal.TablePrefix, table), []interface{}{visibilityTimeout, jobID}
 }
 
 func (SQLTemplateForMySQL) NewAddQueueAttributeDML(queue, table string, delaySeconds, maximumMessageSize, messageRetentionPeriod int64, deadLetterTarget string, maxReceiveCount, visibilityTimeout int64) (string, []interface{}) {
 	query := `
 INSERT INTO %s_queue_setting (name, visibility_timeout, delay_seconds, maximum_message_size, message_retention_period, dead_letter_target, max_receive_count) VALUES (?, ?, ?, ?, ?, ?, ?)
 `
-	return fmt.Sprintf(query, internal.PackageName), []interface{}{queue, visibilityTimeout, delaySeconds, maximumMessageSize, messageRetentionPeriod, deadLetterTarget, maxReceiveCount}
+	return fmt.Sprintf(query, internal.TablePrefix), []interface{}{queue, visibilityTimeout, delaySeconds, maximumMessageSize, messageRetentionPeriod, deadLetterTarget, maxReceiveCount}
 }
 
 func (SQLTemplateForMySQL) NewUpdateQueueAttributeDML(visibilityTimeout, delaySeconds, maximumMessageSize, messageRetentionPeriod *int64, deadLetterTarget *string, maxReceiveCount *int64, queue string) (string, []interface{}) {
@@ -204,7 +204,7 @@ UPDATE %s_queue_setting SET %s WHERE name = ?
 		args = append(args, *maxReceiveCount)
 	}
 	args = append(args, queue)
-	return fmt.Sprintf(query, internal.PackageName, strings.Join(sets, ",")), args
+	return fmt.Sprintf(query, internal.TablePrefix, strings.Join(sets, ",")), args
 }
 
 func (SQLTemplateForMySQL) NewCreateQueueAttributeDDL() string {
@@ -219,7 +219,7 @@ CREATE TABLE IF NOT EXISTS %s_queue_setting (
 		max_receive_count        INTEGER UNSIGNED NOT NULL DEFAULT 0,
 		UNIQUE(name)
 );`
-	return fmt.Sprintf(query, internal.PackageName)
+	return fmt.Sprintf(query, internal.TablePrefix)
 }
 
 func (SQLTemplateForMySQL) NewCreateQueueDDL(table string) string {
