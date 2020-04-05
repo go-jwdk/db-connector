@@ -6,7 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-jwdk/db-connector/internal"
+	"github.com/go-jwdk/db-connector"
+
 	"github.com/go-jwdk/jobworker"
 	"github.com/mattn/go-sqlite3"
 	"github.com/vvatanabe/goretryer/exponential"
@@ -46,7 +47,7 @@ func init() {
 type Provider struct{}
 
 func (Provider) Open(attrs map[string]interface{}) (jobworker.Connector, error) {
-	values := internal.ConnAttrsToValues(attrs)
+	values := db_connector.ConnAttrsToValues(attrs)
 	values.ApplyDefaultValues()
 	var s Setting
 	s.DSN = values.DSN
@@ -65,7 +66,7 @@ type Setting struct {
 	NumMaxRetries   *int
 }
 
-func Open(s *Setting) (*internal.Connector, error) {
+func Open(s *Setting) (*db_connector.Connector, error) {
 	db, err := sql.Open(connName, s.DSN)
 	if err != nil {
 		return nil, err
@@ -79,7 +80,7 @@ func Open(s *Setting) (*internal.Connector, error) {
 	if s.NumMaxRetries != nil {
 		er.NumMaxRetries = *s.NumMaxRetries
 	}
-	return &internal.Connector{
+	return &db_connector.Connector{
 		ConnName:           connName,
 		DB:                 db,
 		SQLTemplate:        SQLTemplateForSQLite3{},
@@ -147,7 +148,7 @@ func (SQLTemplateForSQLite3) NewFindQueueAttributeDML(table string) (stmt string
 	query := `
 SELECT * FROM %s_queue_attribute WHERE name=?
 `
-	return fmt.Sprintf(query, internal.TablePrefix),
+	return fmt.Sprintf(query, db_connector.TablePrefix),
 		[]interface{}{table}
 }
 
@@ -163,7 +164,7 @@ func (SQLTemplateForSQLite3) NewAddQueueAttributeDML(queue, table string, delayS
 INSERT INTO %s_queue_attribute (name, raw_name, visibility_timeout, delay_seconds, maximum_message_size, message_retention_period, dead_letter_target, max_receive_count)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 `
-	return fmt.Sprintf(query, internal.TablePrefix), []interface{}{queue, table, visibilityTimeout, delaySeconds, maximumMessageSize, messageRetentionPeriod, deadLetterTarget, maxReceiveCount}
+	return fmt.Sprintf(query, db.TablePrefix), []interface{}{queue, table, visibilityTimeout, delaySeconds, maximumMessageSize, messageRetentionPeriod, deadLetterTarget, maxReceiveCount}
 }
 
 func (SQLTemplateForSQLite3) NewUpdateQueueAttributeDML(visibilityTimeout, delaySeconds, maximumMessageSize, messageRetentionPeriod *int64, deadLetterTarget *string, maxReceiveCount *int64, table string) (stmt string, args []interface{}) {
@@ -196,7 +197,7 @@ UPDATE %s_queue_attribute SET %s WHERE raw_name = ?
 		args = append(args, *maxReceiveCount)
 	}
 	args = append(args, table)
-	return fmt.Sprintf(query, internal.TablePrefix, strings.Join(sets, ",")), args
+	return fmt.Sprintf(query, db.TablePrefix, strings.Join(sets, ",")), args
 }
 
 func (SQLTemplateForSQLite3) NewCreateQueueAttributeDDL() string {
@@ -213,7 +214,7 @@ CREATE TABLE IF NOT EXISTS %s_queue_attribute (
 		UNIQUE(name)
 		UNIQUE(raw_name)
 );`
-	return fmt.Sprintf(query, internal.TablePrefix)
+	return fmt.Sprintf(query, db_connector.TablePrefix)
 }
 
 func (SQLTemplateForSQLite3) NewCreateQueueDDL(table string) string {

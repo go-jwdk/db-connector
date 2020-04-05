@@ -2,7 +2,7 @@ package internal
 
 import "database/sql"
 
-func withTransaction(db *sql.DB, ope func(tx *sql.Tx) error) (err error) {
+func WithTransaction(db *sql.DB, ope func(tx *sql.Tx) error) (err error) {
 	tx, err := db.Begin()
 	if err != nil {
 		return
@@ -21,6 +21,6 @@ func withTransaction(db *sql.DB, ope func(tx *sql.Tx) error) (err error) {
 	return
 }
 
-func isErrNoRows(err error) bool {
+func IsErrNoRows(err error) bool {
 	return err == sql.ErrNoRows
 }

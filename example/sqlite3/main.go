@@ -6,10 +6,6 @@ import (
 	"os"
 	"time"
 
-	uuid "github.com/satori/go.uuid"
-
-	"github.com/go-jwdk/db-connector/internal"
-
 	"github.com/go-jwdk/db-connector/sqlite3"
 	"github.com/go-jwdk/jobworker"
 )
@@ -40,16 +36,40 @@ func main() {
 		}
 	}()
 
-	_, err = conn.CreateQueue(context.Background(), &internal.CreateQueueInput{
+	_, err = conn.CreateQueue(context.Background(), &db_connector.CreateQueueInput{
 		Name:       "test",
 		Attributes: nil,
 	})
 
 	go func() {
+		//for {
+		//	_, err := conn.Enqueue(context.Background(), &jobworker.EnqueueInput{
+		//		Queue:   "test",
+		//		Content: "hello: " + uuid.NewV4().String(),
+		//	})
+		//	if err != nil {
+		//		fmt.Println("could not enqueue a job", err)
+		//	}
+		//
+		//	time.Sleep(3 * time.Second)
+		//}
 		for {
-			_, err := conn.Enqueue(context.Background(), &jobworker.EnqueueInput{
-				Queue:   "test",
-				Content: "hello: " + uuid.NewV4().String(),
+			_, err := conn.EnqueueBatch(context.Background(), &jobworker.EnqueueBatchInput{
+				Queue: "test",
+				Entries: []*jobworker.EnqueueBatchEntry{
+					{
+						ID:      "foo",
+						Content: "foo-content",
+					},
+					{
+						ID:      "bar",
+						Content: "bar-content",
+					},
+					{
+						ID:      "baz",
+						Content: "baz-content",
+					},
+				},
 			})
 			if err != nil {
 				fmt.Println("could not enqueue a job", err)

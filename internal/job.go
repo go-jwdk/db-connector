@@ -6,7 +6,7 @@ import (
 	"github.com/go-jwdk/jobworker"
 )
 
-func newJob(queueName string, job *Job, conn jobworker.Connector) *jobworker.Job {
+func NewJob(queueName string, job *Job, conn jobworker.Connector) *jobworker.Job {
 	return &jobworker.Job{
 		Conn:            conn,
 		QueueName:       queueName,

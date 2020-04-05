@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-jwdk/db-connector/internal"
 	"github.com/go-jwdk/jobworker"
 	"github.com/lib/pq"
 	"github.com/vvatanabe/goretryer/exponential"
@@ -49,7 +48,7 @@ type Provider struct {
 
 func (Provider) Open(attrs map[string]interface{}) (jobworker.Connector, error) {
 
-	values := internal.ConnAttrsToValues(attrs)
+	values := db_connector.ConnAttrsToValues(attrs)
 	values.ApplyDefaultValues()
 
 	var s Setting
@@ -70,7 +69,7 @@ type Setting struct {
 	NumMaxRetries   *int
 }
 
-func Open(s *Setting) (*internal.Connector, error) {
+func Open(s *Setting) (*db_connector.Connector, error) {
 
 	db, err := sql.Open(connName, s.DSN)
 	if err != nil {
@@ -87,7 +86,7 @@ func Open(s *Setting) (*internal.Connector, error) {
 		er.NumMaxRetries = *s.NumMaxRetries
 	}
 
-	return &internal.Connector{
+	return &db_connector.Connector{
 		ConnName:           connName,
 		DB:                 db,
 		SQLTemplate:        SQLTemplateForPostgres{},
@@ -104,14 +103,14 @@ func (SQLTemplateForPostgres) NewFindJobDML(table string, jobID string) (string,
 	query := `
 SELECT * FROM %s_%s WHERE job_id=?
 `
-	return fmt.Sprintf(query, internal.TablePrefix, table), []interface{}{jobID}
+	return fmt.Sprintf(query, db_connector.TablePrefix, table), []interface{}{jobID}
 }
 
 func (SQLTemplateForPostgres) NewFindJobsDML(table string, limit int64) (stmt string, args []interface{}) {
 	query := `
 SELECT * FROM %s_%s WHERE invisible_until <= extract(epoch from now()) ORDER BY sec_id DESC LIMIT %d
 `
-	return fmt.Sprintf(query, internal.TablePrefix, table, limit), []interface{}{}
+	return fmt.Sprintf(query, db_connector.TablePrefix, table, limit), []interface{}{}
 }
 
 func (SQLTemplateForPostgres) NewHideJobDML(table string, jobID string, oldRetryCount, oldInvisibleUntil, invisibleTime int64) (stmt string, args []interface{}) {
@@ -123,7 +122,7 @@ WHERE
   retry_count=? AND
   invisible_until=?
 `
-	return fmt.Sprintf(query, internal.TablePrefix, table), []interface{}{invisibleTime, jobID, oldRetryCount, oldInvisibleUntil}
+	return fmt.Sprintf(query, db_connector.TablePrefix, table), []interface{}{invisibleTime, jobID, oldRetryCount, oldInvisibleUntil}
 }
 
 func (SQLTemplateForPostgres) NewEnqueueJobDML(table, jobID, content string, deduplicationID, groupID *string, delaySeconds int64) (string, []interface{}) {
@@ -131,7 +130,7 @@ func (SQLTemplateForPostgres) NewEnqueueJobDML(table, jobID, content string, ded
 INSERT INTO %s_%s (job_id, content, deduplication_id, group_id, retry_count, invisible_until, enqueue_at)
 VALUES (?, ?, ?, ?, 0, extract(epoch from now()) + ?, extract(epoch from now()) ))
 `
-	return fmt.Sprintf(query, internal.TablePrefix, table), []interface{}{jobID, content, deduplicationID, groupID, delaySeconds}
+	return fmt.Sprintf(query, db_connector.TablePrefix, table), []interface{}{jobID, content, deduplicationID, groupID, delaySeconds}
 }
 
 func (SQLTemplateForPostgres) NewEnqueueJobWithTimeDML(table, jobID, content string, deduplicationID, groupID *string, enqueueAt int64) (string, []interface{}) {
@@ -139,14 +138,14 @@ func (SQLTemplateForPostgres) NewEnqueueJobWithTimeDML(table, jobID, content str
 INSERT INTO %s_%s (job_id, content, deduplication_id, group_id, retry_count, invisible_until, enqueue_at) 
 VALUES (?, ?, ?, ?, 0, 0, ?)
 `
-	return fmt.Sprintf(query, internal.TablePrefix, table), []interface{}{jobID, content, deduplicationID, groupID, enqueueAt}
+	return fmt.Sprintf(query, db_connector.TablePrefix, table), []interface{}{jobID, content, deduplicationID, groupID, enqueueAt}
 }
 
 func (SQLTemplateForPostgres) NewDeleteJobDML(table, jobID string) (stmt string, args []interface{}) {
 	query := `
 DELETE FROM %s_%s WHERE job_id = ?
 `
-	return fmt.Sprintf(query, internal.TablePrefix, table),
+	return fmt.Sprintf(query, db_connector.TablePrefix, table),
 		[]interface{}{jobID}
 }
 
@@ -154,7 +153,7 @@ func (SQLTemplateForPostgres) NewFindQueueAttributeDML(queueName string) (stmt s
 	query := `
 SELECT * FROM %s_queue_setting WHERE name=?
 `
-	return fmt.Sprintf(query, internal.TablePrefix),
+	return fmt.Sprintf(query, db_connector.TablePrefix),
 		[]interface{}{queueName}
 }
 
@@ -162,14 +161,14 @@ func (SQLTemplateForPostgres) NewUpdateJobByVisibilityTimeoutDML(table string, j
 	query := `
 UPDATE %s_%s SET visible_after = extract(epoch from now()) + ? WHERE job_id = ?
 `
-	return fmt.Sprintf(query, internal.TablePrefix, table), []interface{}{visibilityTimeout, jobID}
+	return fmt.Sprintf(query, db_connector.TablePrefix, table), []interface{}{visibilityTimeout, jobID}
 }
 
 func (SQLTemplateForPostgres) NewAddQueueAttributeDML(queueName, table string, delaySeconds, maximumMessageSize, messageRetentionPeriod int64, deadLetterTarget string, maxReceiveCount, visibilityTimeout int64) (string, []interface{}) {
 	query := `
 INSERT INTO %s_queue_setting (name, visibility_timeout, delay_seconds, maximum_message_size, message_retention_period, dead_letter_target, max_receive_count) VALUES (?, ?, ?, ?, ?, ?, ?)
 `
-	return fmt.Sprintf(query, internal.TablePrefix), []interface{}{queueName, visibilityTimeout, delaySeconds, maximumMessageSize, messageRetentionPeriod, deadLetterTarget, maxReceiveCount}
+	return fmt.Sprintf(query, db_connector.TablePrefix), []interface{}{queueName, visibilityTimeout, delaySeconds, maximumMessageSize, messageRetentionPeriod, deadLetterTarget, maxReceiveCount}
 }
 
 func (SQLTemplateForPostgres) NewUpdateQueueAttributeDML(visibilityTimeout, delaySeconds, maximumMessageSize, messageRetentionPeriod *int64, deadLetterTarget *string, maxReceiveCount *int64, queueName string) (string, []interface{}) {
@@ -205,7 +204,7 @@ UPDATE %s_queue_setting SET %s WHERE name = ?
 		args = append(args, *maxReceiveCount)
 	}
 	args = append(args, queueName)
-	return fmt.Sprintf(query, internal.TablePrefix, strings.Join(sets, ",")), args
+	return fmt.Sprintf(query, db_connector.TablePrefix, strings.Join(sets, ",")), args
 }
 
 func (SQLTemplateForPostgres) NewCreateQueueAttributeDDL() string {
@@ -220,7 +219,7 @@ CREATE TABLE IF NOT EXISTS %s_queue_setting (
 		max_receive_count        INTEGER NOT NULL DEFAULT 0,
 		UNIQUE(name)
 );`
-	return fmt.Sprintf(query, internal.TablePrefix)
+	return fmt.Sprintf(query, db_connector.TablePrefix)
 }
 
 func (SQLTemplateForPostgres) NewCreateQueueDDL(table string) string {

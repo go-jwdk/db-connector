@@ -3,6 +3,8 @@ package internal
 import (
 	"context"
 	"database/sql"
+
+	"github.com/go-jwdk/db-connector"
 )
 
 type Querier interface {
@@ -49,7 +51,7 @@ func (r *Repository) DeleteJob(ctx context.Context, queue string, jobID string) 
 	return nil
 }
 
-func (r *Repository) FindJob(ctx context.Context, queue string, jobID string) (*Job, error) {
+func (r *Repository) GetJob(ctx context.Context, queue string, jobID string) (*Job, error) {
 	stmt, args := r.tmpl.NewFindJobDML(queue, jobID)
 	row := r.querier.QueryRowContext(ctx, stmt, args...)
 
@@ -69,7 +71,7 @@ func (r *Repository) FindJob(ctx context.Context, queue string, jobID string) (*
 	return &job, nil
 }
 
-func (r *Repository) FindJobs(ctx context.Context, queue string, limit int64) ([]*Job, error) {
+func (r *Repository) GetJobs(ctx context.Context, queue string, limit int64) ([]*Job, error) {
 
 	if limit == 0 {
 		limit = 1
@@ -121,10 +123,10 @@ func (r *Repository) UpdateJobVisibility(ctx context.Context, queueRawName, jobI
 	return affected == 1, nil
 }
 
-func (r *Repository) FindQueueAttribute(ctx context.Context, queue string) (*QueueAttributes, error) {
-	stmt, args := r.tmpl.NewFindQueueAttributeDML(queue)
+func (r *Repository) GetQueueAttributes(ctx context.Context, queueName string) (*db.QueueAttributes, error) {
+	stmt, args := r.tmpl.NewFindQueueAttributeDML(queueName)
 	row := r.querier.QueryRowContext(ctx, stmt, args...)
-	var q QueueAttributes
+	var q db.QueueAttributes
 	err := row.Scan(
 		&q.Name,
 		&q.RawName,
@@ -141,7 +143,7 @@ func (r *Repository) FindQueueAttribute(ctx context.Context, queue string) (*Que
 	return &q, nil
 }
 
-func (r *Repository) CreateQueueAttribute(ctx context.Context, queueName, queueRawName string, visibilityTimeout, delaySeconds, maximumMessageSize, messageRetentionPeriod, maxReceiveCount int64, deadLetterTarget string) error {
+func (r *Repository) CreateQueueAttributes(ctx context.Context, queueName, queueRawName string, visibilityTimeout, delaySeconds, maximumMessageSize, messageRetentionPeriod, maxReceiveCount int64, deadLetterTarget string) error {
 	stmt, args := r.tmpl.NewAddQueueAttributeDML(queueName, queueRawName, delaySeconds, maximumMessageSize, messageRetentionPeriod, deadLetterTarget, maxReceiveCount, visibilityTimeout)
 	_, err := r.querier.ExecContext(ctx, stmt, args...)
 	if err != nil {
@@ -150,7 +152,8 @@ func (r *Repository) CreateQueueAttribute(ctx context.Context, queueName, queueR
 	return nil
 }
 
-func (r *Repository) UpdateQueueAttribute(ctx context.Context, queueRawName string, visibilityTimeout, delaySeconds, maximumMessageSize, messageRetentionPeriod, maxReceiveCount *int64, deadLetterTarget *string) (updated bool, err error) {
+func (r *Repository) UpdateQueueAttributes(ctx context.Context, queueRawName string,
+	visibilityTimeout, delaySeconds, maximumMessageSize, messageRetentionPeriod, maxReceiveCount *int64, deadLetterTarget *string) (updated bool, err error) {
 	stmt, args := r.tmpl.NewUpdateQueueAttributeDML(
 		visibilityTimeout,
 		delaySeconds,
@@ -176,7 +179,7 @@ func (r *Repository) DefineQueue(ctx context.Context, queueRawName string) error
 	return nil
 }
 
-func (r *Repository) DefineQueueAttribute(ctx context.Context) error {
+func (r *Repository) DefineQueueAttributes(ctx context.Context) error {
 	stmt := r.tmpl.NewCreateQueueAttributeDDL()
 	_, err := r.querier.ExecContext(ctx, stmt)
 	if err != nil {

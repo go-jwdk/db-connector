@@ -1,4 +1,4 @@
-package internal
+package db
 
 type QueueAttributes struct {
 	Name                   string
