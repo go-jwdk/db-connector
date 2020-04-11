@@ -299,7 +299,7 @@ type DeleteJobBatchInput struct {
 type DeleteJobBatchOutput struct {
 }
 
-func (c *Connector) DeleteJobBatch(ctx context.Context, input *DeleteJobBatchInput) error {
+func (c *Connector) DeleteJobBatch(ctx context.Context, input *DeleteJobBatchInput) (*DeleteJobBatchOutput, error) {
 	_, err := c.retryer.Do(ctx, func(ctx context.Context) error {
 		return internal.WithTransaction(c.db, func(tx *sql.Tx) error {
 			repo := internal.NewRepository(tx, c.sqlTmpl)
@@ -321,7 +321,10 @@ func (c *Connector) DeleteJobBatch(ctx context.Context, input *DeleteJobBatchInp
 	}, func(err error) bool {
 		return c.isDeadlockDetected(err)
 	})
-	return err
+	if err != nil {
+		return nil, err
+	}
+	return &DeleteJobBatchOutput{}, nil
 }
 
 type MoveJobBatchInput struct {
@@ -377,12 +380,27 @@ func (c *Connector) MoveJobBatch(ctx context.Context, input *MoveJobBatchInput) 
 	return nil, err
 }
 
-func (c *Connector) GrabJobs(ctx context.Context,
-	queueAttr *QueueAttributes, maxNumberOfJobs, visibilityTimeout int64) ([]*internal.Job, error) {
+type GrabJobsInput struct {
+	QueueName         string
+	MaxNumberOfJobs   int64
+	VisibilityTimeout int64
+}
+
+type GrabJobsOutput struct {
+	Jobs []*jobworker.Job
+}
+
+func (c *Connector) GrabJobs(ctx context.Context, input *GrabJobsInput) (*GrabJobsOutput, error) {
+
+	out, err := c.GetQueueAttributes(ctx, &GetQueueAttributesInput{
+		QueueName: input.QueueName,
+	})
+	if err != nil {
+		return nil, err
+	}
 
 	repo := internal.NewRepository(c.db, c.sqlTmpl)
-
-	jobs, err := repo.GetJobs(ctx, queueAttr.RawName, maxNumberOfJobs)
+	jobs, err := repo.GetJobs(ctx, out.Attributes.RawName, input.MaxNumberOfJobs)
 	if err != nil {
 		return nil, err
 	}
@@ -393,7 +411,7 @@ func (c *Connector) GrabJobs(ctx context.Context,
 	)
 
 	for _, job := range jobs {
-		if job.RetryCount > queueAttr.MaxReceiveCount {
+		if job.RetryCount > out.Attributes.MaxReceiveCount {
 			deadJobs = append(deadJobs, job)
 		} else {
 			aliveJobs = append(aliveJobs, job)
@@ -401,7 +419,7 @@ func (c *Connector) GrabJobs(ctx context.Context,
 	}
 
 	if len(deadJobs) > 0 {
-		err = c.handleDeadJobs(ctx, queueAttr, deadJobs)
+		err = c.handleDeadJobs(ctx, out.Attributes, deadJobs)
 		if err != nil {
 			// TODO
 			c.loggerFunc("could not handle dead job", err)
@@ -413,31 +431,38 @@ func (c *Connector) GrabJobs(ctx context.Context,
 		shuffled[j] = struct{}{}
 	}
 
-	var deliveries []*internal.Job
+	var deliveries []*jobworker.Job
 	for job := range shuffled {
-
-		grabbed, err := repo.GrabJob(ctx, queueAttr.RawName, job, visibilityTimeout)
+		grabbed, err := repo.GrabJob(ctx, out.Attributes.RawName, job, input.VisibilityTimeout)
 		if err != nil || !grabbed {
 			continue
 		}
-
-		deliveries = append(deliveries, job)
+		deliveries = append(deliveries, internal.NewJob(out.Attributes.Name, job, c))
 	}
-	return deliveries, nil
+	return &GrabJobsOutput{
+		Jobs: deliveries,
+	}, nil
 }
 
-func (c *Connector) handleDeadJobs(ctx context.Context, queueAttr *QueueAttributes, deadJobs []*internal.Job) error {
-	if queueAttr.HasDeadLetter() {
-		deadLetterQueue, err := c.GetQueueAttributes(ctx, queueAttr.DeadLetterTarget)
+func (c *Connector) handleDeadJobs(ctx context.Context, queueAttributes *QueueAttributes, deadJobs []*jobworker.Job) error {
+	if queueAttributes.HasDeadLetter() {
+		out, err := c.GetQueueAttributes(ctx, &GetQueueAttributesInput{
+			QueueName: queueAttributes.DeadLetterTarget,
+		})
 		if err != nil {
 			return err
 		}
-		err = c.moveJobBatch(ctx, queueAttr, deadLetterQueue, deadJobs)
+		_, err = c.MoveJobBatch(ctx, &MoveJobBatchInput{
+			Jobs: deadJobs,
+			To:   out.Attributes.Name,
+		})
 		if err != nil {
 			return fmt.Errorf("could not move job batch: %s", err)
 		}
 	} else {
-		err := c.DeleteJobBatch(ctx, queueAttr, deadJobs)
+		_, err := c.DeleteJobBatch(ctx, &DeleteJobBatchInput{
+			Jobs: deadJobs,
+		})
 		if err != nil {
 			return fmt.Errorf("could not clean job batch: %s", err)
 		}
