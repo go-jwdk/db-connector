@@ -25,22 +25,9 @@ const (
 	connAttributeNameConnMaxLifetime = "ConnMaxLifetime"
 	connAttributeNameNumMaxRetries   = "NumMaxRetries"
 
-	queueAttributeNameVisibilityTimeout      = "JobVisibilityTimeout"
-	queueAttributeNameDelaySeconds           = "DelaySeconds"
-	queueAttributeNameMaximumMessageSize     = "MaximumMessageSize"
-	queueAttributeNameMessageRetentionPeriod = "MessageRetentionPeriod"
-	queueAttributeNameDeadLetterTarget       = "DeadLetterTarget"
-	queueAttributeNameMaxReceiveCount        = "MaxReceiveCount"
-
-	queueAttributeValueVisibilityTimeoutDefault      = int64(30)
-	queueAttributeValueDelaySecondsDefault           = int64(0)
-	queueAttributeValueMaximumMessageSizeDefault     = int64(0)
-	queueAttributeValueMessageRetentionPeriodDefault = int64(0)
-	queueAttributeValueMaxReceiveCountDefault        = int64(0)
-	queueAttributeValueDeadLetterTargetDefault       = ""
-
 	defaultNumMaxRetries         = 3
 	defaultQueueAttributesExpire = time.Minute
+	defaultVisibilityTimeout     = int64(30)
 )
 
 type connAttributeValues struct {
@@ -626,7 +613,7 @@ type CreateQueueInput struct {
 func (in *CreateQueueInput) applyDefaultValues() *CreateQueueInput {
 	v := *in
 	if v.VisibilityTimeout == 0 {
-		v.VisibilityTimeout = queueAttributeValueVisibilityTimeoutDefault
+		v.VisibilityTimeout = defaultVisibilityTimeout
 	}
 	return &v
 }
