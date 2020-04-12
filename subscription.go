@@ -1,4 +1,4 @@
-package internal
+package db
 
 import (
 	"context"
@@ -6,8 +6,6 @@ import (
 	"strconv"
 	"sync/atomic"
 	"time"
-
-	"github.com/go-jwdk/db-connector"
 
 	"github.com/go-jwdk/jobworker"
 )
@@ -25,14 +23,38 @@ const (
 	defaultMaxNumberOfJobs = int64(1)
 )
 
-func NewSubscription(attributes *db.QueueAttributes,
+func newSubscription(queueAttributes *QueueAttributes,
 	conn jobworker.Connector,
-	grabber Grabber,
-	meta map[string]string) *Subscription {
-	pollingInterval, visibilityTimeout, maxNumberOfMessages := extractMetadata(meta, attributes)
-	return &Subscription{
+	grabber grabber,
+	meta map[string]string) *subscription {
+
+	pollingInterval := defaultPollingInterval
+	if v := meta[subMetadataKeyPollingInterval]; v != "" {
+		i, err := strconv.ParseInt(v, 10, 64)
+		if err == nil {
+			pollingInterval = time.Duration(i) * time.Second
+		}
+	}
+
+	visibilityTimeout := queueAttributes.VisibilityTimeout
+	if v := meta[subMetadataKeyVisibilityTimeout]; v != "" {
+		i, err := strconv.ParseInt(v, 10, 64)
+		if err == nil {
+			visibilityTimeout = i
+		}
+	}
+
+	maxNumberOfMessages := defaultMaxNumberOfJobs
+	if v := meta[subMetadataKeyMaxNumberOfJobs]; v != "" {
+		i, err := strconv.ParseInt(v, 10, 64)
+		if err == nil {
+			maxNumberOfMessages = i
+		}
+	}
+
+	return &subscription{
 		pollingInterval:   pollingInterval,
-		queueAttributes:   attributes,
+		queueAttributes:   queueAttributes,
 		conn:              conn,
 		grabber:           grabber,
 		visibilityTimeout: visibilityTimeout,
@@ -41,98 +63,69 @@ func NewSubscription(attributes *db.QueueAttributes,
 	}
 }
 
-func extractMetadata(meta map[string]string, queueAttr *db.QueueAttributes) (
-	pollingInterval time.Duration,
-	visibilityTimeout int64,
-	maxNumberOfMessages int64,
-) {
-
-	pollingInterval = defaultPollingInterval
-	if v := meta[subMetadataKeyPollingInterval]; v != "" {
-		i, err := strconv.ParseInt(v, 10, 64)
-		if err == nil {
-			pollingInterval = time.Duration(i) * time.Second
-		}
-	}
-
-	visibilityTimeout = queueAttr.VisibilityTimeout
-	if v := meta[subMetadataKeyVisibilityTimeout]; v != "" {
-		i, err := strconv.ParseInt(v, 10, 64)
-		if err == nil {
-			visibilityTimeout = i
-		}
-	}
-
-	maxNumberOfMessages = defaultMaxNumberOfJobs
-	if v := meta[subMetadataKeyMaxNumberOfJobs]; v != "" {
-		i, err := strconv.ParseInt(v, 10, 64)
-		if err == nil {
-			maxNumberOfMessages = i
-		}
-	}
-
-	return
-}
-
-type Subscription struct {
-	queueAttributes *db.QueueAttributes
+type subscription struct {
+	queueAttributes *QueueAttributes
 	conn            jobworker.Connector
 
 	pollingInterval   time.Duration
 	visibilityTimeout int64
 	maxNumberOfJobs   int64
 
-	grabber Grabber
+	grabber grabber
 	queue   chan *jobworker.Job
 	state   int32
 }
 
-func (s *Subscription) Active() bool {
+func (s *subscription) Active() bool {
 	return atomic.LoadInt32(&s.state) == subStateActive
 }
 
-func (s *Subscription) Queue() chan *jobworker.Job {
+func (s *subscription) Queue() chan *jobworker.Job {
 	return s.queue
 }
 
 var ErrCompletedSubscription = errors.New("subscription is unsubscribed")
 
-func (s *Subscription) UnSubscribe() error {
+func (s *subscription) UnSubscribe() error {
 	if !atomic.CompareAndSwapInt32(&s.state, subStateActive, subStateClosing) {
 		return ErrCompletedSubscription
 	}
 	return nil
 }
 
-func (s *Subscription) Start() {
-	msgCh := make(chan *Job)
-	go s.writeChan(msgCh)
-	s.readChan(msgCh)
+func (s *subscription) Start() {
+	ch := make(chan *jobworker.Job)
+	go s.writeChan(ch)
+	s.readChan(ch)
 }
 
-func (s *Subscription) writeChan(ch chan *Job) {
+func (s *subscription) writeChan(ch chan *jobworker.Job) {
 	for {
 		if atomic.LoadInt32(&s.state) != subStateActive {
 			close(ch)
 			return
 		}
 		ctx := context.Background()
-		grabbedJobs, err := s.grabber.GrabJobs(ctx, s.queueAttributes, s.maxNumberOfJobs, s.visibilityTimeout)
+		grabbed, err := s.grabber.GrabJobs(ctx, &GrabJobsInput{
+			QueueName:         s.queueAttributes.Name,
+			MaxNumberOfJobs:   s.maxNumberOfJobs,
+			VisibilityTimeout: s.visibilityTimeout,
+		})
 		if err != nil {
 			close(ch)
 			return
 		}
-		if len(grabbedJobs) == 0 {
+		if len(grabbed.Jobs) == 0 {
 			time.Sleep(s.pollingInterval)
 			continue
 		}
-		for _, job := range grabbedJobs {
+		for _, job := range grabbed.Jobs {
 			ch <- job
 		}
 	}
 }
 
-func (s *Subscription) readChan(ch chan *Job) {
+func (s *subscription) readChan(ch chan *jobworker.Job) {
 	for {
 		job, ok := <-ch
 		if !ok {
@@ -142,15 +135,15 @@ func (s *Subscription) readChan(ch chan *Job) {
 			}
 			return
 		}
-		s.queue <- NewJob(s.queueAttributes.Name, job, s.conn)
+		s.queue <- job
 	}
 }
 
-func (s *Subscription) closeQueue() {
+func (s *subscription) closeQueue() {
 	atomic.StoreInt32(&s.state, subStateClosed)
 	close(s.queue)
 }
 
-type Grabber interface {
-	GrabJobs(ctx context.Context, queueAttr *db.QueueAttributes, maxNumberOfJobs, visibilityTimeout int64) ([]*Job, error)
+type grabber interface {
+	GrabJobs(ctx context.Context, input *GrabJobsInput) (*GrabJobsOutput, error)
 }

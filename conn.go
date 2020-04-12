@@ -40,7 +40,6 @@ const (
 	queueAttributeValueDeadLetterTargetDefault       = ""
 
 	defaultNumMaxRetries         = 3
-	defaultMessageGroupID        = "default"
 	defaultQueueAttributesExpire = time.Minute
 )
 
@@ -137,14 +136,14 @@ func (c *Connector) Name() string {
 }
 
 func (c *Connector) Subscribe(ctx context.Context, input *jobworker.SubscribeInput) (*jobworker.SubscribeOutput, error) {
-	var sub *internal.Subscription
+	var sub *subscription
 	out, err := c.GetQueueAttributes(ctx, &GetQueueAttributesInput{
 		QueueName: input.Queue,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("could not resolve queue: %w", err)
 	}
-	sub = internal.NewSubscription(out.Attributes, c, c, input.Metadata)
+	sub = newSubscription(out.Attributes, c, c, input.Metadata)
 	go sub.Start()
 	return &jobworker.SubscribeOutput{
 		Subscription: sub,
@@ -400,18 +399,19 @@ func (c *Connector) GrabJobs(ctx context.Context, input *GrabJobsInput) (*GrabJo
 	}
 
 	repo := internal.NewRepository(c.db, c.sqlTmpl)
-	jobs, err := repo.GetJobs(ctx, out.Attributes.RawName, input.MaxNumberOfJobs)
+	rawJobs, err := repo.GetJobs(ctx, out.Attributes.RawName, input.MaxNumberOfJobs)
 	if err != nil {
 		return nil, err
 	}
 
 	var (
-		deadJobs  []*internal.Job
-		aliveJobs []*internal.Job
+		deadJobs  []*jobworker.Job
+		aliveJobs []*jobworker.Job
 	)
 
-	for _, job := range jobs {
-		if job.RetryCount > out.Attributes.MaxReceiveCount {
+	for _, rawJob := range rawJobs {
+		job := internal.NewJob(out.Attributes.Name, rawJob, c)
+		if rawJob.RetryCount > out.Attributes.MaxReceiveCount {
 			deadJobs = append(deadJobs, job)
 		} else {
 			aliveJobs = append(aliveJobs, job)
@@ -421,23 +421,28 @@ func (c *Connector) GrabJobs(ctx context.Context, input *GrabJobsInput) (*GrabJo
 	if len(deadJobs) > 0 {
 		err = c.handleDeadJobs(ctx, out.Attributes, deadJobs)
 		if err != nil {
-			// TODO
 			c.loggerFunc("could not handle dead job", err)
 		}
 	}
 
-	shuffled := map[*internal.Job]struct{}{}
-	for _, j := range jobs {
+	shuffled := map[*jobworker.Job]struct{}{}
+	for _, j := range aliveJobs {
 		shuffled[j] = struct{}{}
 	}
 
 	var deliveries []*jobworker.Job
 	for job := range shuffled {
-		grabbed, err := repo.GrabJob(ctx, out.Attributes.RawName, job, input.VisibilityTimeout)
-		if err != nil || !grabbed {
+		rawJob := job.Raw.(*internal.Job)
+		grabbed, err := repo.GrabJob(ctx, out.Attributes.RawName,
+			rawJob.JobID, rawJob.RetryCount, rawJob.InvisibleUntil, input.VisibilityTimeout)
+		if err != nil {
+			c.loggerFunc("could not grab job", err)
 			continue
 		}
-		deliveries = append(deliveries, internal.NewJob(out.Attributes.Name, job, c))
+		if !grabbed {
+			continue
+		}
+		deliveries = append(deliveries, job)
 	}
 	return &GrabJobsOutput{
 		Jobs: deliveries,
@@ -457,14 +462,14 @@ func (c *Connector) handleDeadJobs(ctx context.Context, queueAttributes *QueueAt
 			To:   out.Attributes.Name,
 		})
 		if err != nil {
-			return fmt.Errorf("could not move job batch: %s", err)
+			return fmt.Errorf("could not move job to dead letter queue: %s", err)
 		}
 	} else {
 		_, err := c.DeleteJobBatch(ctx, &DeleteJobBatchInput{
 			Jobs: deadJobs,
 		})
 		if err != nil {
-			return fmt.Errorf("could not clean job batch: %s", err)
+			return fmt.Errorf("could not delete job batch: %s", err)
 		}
 	}
 	return nil

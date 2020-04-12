@@ -103,8 +103,9 @@ func (r *Repository) GetJobs(ctx context.Context, queue string, limit int64) ([]
 	return jobs, nil
 }
 
-func (r *Repository) GrabJob(ctx context.Context, queue string, job *Job, invisibleTime int64) (grabbed bool, err error) {
-	stmt, args := r.tmpl.NewHideJobDML(queue, job.JobID, job.RetryCount, job.InvisibleUntil, invisibleTime)
+func (r *Repository) GrabJob(ctx context.Context,
+	queue string, jobID string, currentRetryCount, currentInvisibleUntil, invisibleTime int64) (grabbed bool, err error) {
+	stmt, args := r.tmpl.NewHideJobDML(queue, jobID, currentRetryCount, currentInvisibleUntil, invisibleTime)
 	result, err := r.querier.ExecContext(ctx, stmt, args...)
 	if err != nil {
 		return false, err
