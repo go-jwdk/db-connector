@@ -141,32 +141,31 @@ DELETE FROM %s WHERE job_id = ?
 		[]interface{}{jobID}
 }
 
-func (sqlTemplate) NewFindQueueAttributeDML(table string) (stmt string, args []interface{}) {
+func (sqlTemplate) NewFindQueueAttributeDML(queueName string) (stmt string, args []interface{}) {
 	query := `
-SELECT * FROM %s_queue_attribute WHERE name=?
+SELECT * FROM %s_queue_attributes WHERE name=?
 `
-	return fmt.Sprintf(query, dbconn.TablePrefix),
-		[]interface{}{table}
+	return fmt.Sprintf(query, dbconn.TablePrefix), []interface{}{queueName}
 }
 
-func (sqlTemplate) NewUpdateJobByVisibilityTimeoutDML(table string, jobID string, visibilityTimeout int64) (stmt string, args []interface{}) {
+func (sqlTemplate) NewUpdateJobByVisibilityTimeoutDML(queueRawName string, jobID string, visibilityTimeout int64) (stmt string, args []interface{}) {
 	query := `
-UPDATE %s SET visible_after = strftime('%%s', 'now') + ? WHERE job_id = ?
+UPDATE %s SET invisible_until = strftime('%%s', 'now') + ? WHERE job_id = ?
 `
-	return fmt.Sprintf(query, table), []interface{}{visibilityTimeout, jobID}
+	return fmt.Sprintf(query, queueRawName), []interface{}{visibilityTimeout, jobID}
 }
 
-func (sqlTemplate) NewAddQueueAttributeDML(queue, table string, delaySeconds, maximumMessageSize, messageRetentionPeriod int64, deadLetterTarget string, maxReceiveCount, visibilityTimeout int64) (stmt string, args []interface{}) {
+func (sqlTemplate) NewAddQueueAttributesDML(queueName, queueRawName string, delaySeconds, maxReceiveCount, visibilityTimeout int64, deadLetterTarget *string) (stmt string, args []interface{}) {
 	query := `
-INSERT INTO %s_queue_attribute (name, raw_name, visibility_timeout, delay_seconds, maximum_message_size, message_retention_period, dead_letter_target, max_receive_count)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO %s_queue_attributes (name, raw_name, visibility_timeout, delay_seconds, dead_letter_target, max_receive_count)
+VALUES (?, ?, ?, ?, ?, ?)
 `
-	return fmt.Sprintf(query, dbconn.TablePrefix), []interface{}{queue, table, visibilityTimeout, delaySeconds, maximumMessageSize, messageRetentionPeriod, deadLetterTarget, maxReceiveCount}
+	return fmt.Sprintf(query, dbconn.TablePrefix), []interface{}{queueName, queueRawName, visibilityTimeout, delaySeconds, deadLetterTarget, maxReceiveCount}
 }
 
-func (sqlTemplate) NewUpdateQueueAttributeDML(visibilityTimeout, delaySeconds, maximumMessageSize, messageRetentionPeriod *int64, deadLetterTarget *string, maxReceiveCount *int64, table string) (stmt string, args []interface{}) {
+func (sqlTemplate) NewUpdateQueueAttributesDML(queueRawName string, visibilityTimeout, delaySeconds, maxReceiveCount *int64, deadLetterTarget *string) (stmt string, args []interface{}) {
 	query := `
-UPDATE %s_queue_attribute SET %s WHERE raw_name = ?
+UPDATE %s_queue_attributes SET %s WHERE raw_name = ?
 `
 	var sets []string
 	if visibilityTimeout != nil {
@@ -177,14 +176,6 @@ UPDATE %s_queue_attribute SET %s WHERE raw_name = ?
 		sets = append(sets, "delay_seconds=?")
 		args = append(args, *delaySeconds)
 	}
-	if maximumMessageSize != nil {
-		sets = append(sets, "maximum_message_size=?")
-		args = append(args, *maximumMessageSize)
-	}
-	if messageRetentionPeriod != nil {
-		sets = append(sets, "message_retention_period=?")
-		args = append(args, *messageRetentionPeriod)
-	}
 	if deadLetterTarget != nil {
 		sets = append(sets, "dead_letter_target=?")
 		args = append(args, *deadLetterTarget)
@@ -193,21 +184,19 @@ UPDATE %s_queue_attribute SET %s WHERE raw_name = ?
 		sets = append(sets, "max_receive_count=?")
 		args = append(args, *maxReceiveCount)
 	}
-	args = append(args, table)
+	args = append(args, queueRawName)
 	return fmt.Sprintf(query, dbconn.TablePrefix, strings.Join(sets, ",")), args
 }
 
-func (sqlTemplate) NewCreateQueueAttributeDDL() string {
+func (sqlTemplate) NewCreateQueueAttributesDDL() string {
 	query := `
-CREATE TABLE IF NOT EXISTS %s_queue_attribute (
+CREATE TABLE IF NOT EXISTS %s_queue_attributes (
         name                     VARCHAR(255) NOT NULL,
         raw_name                 VARCHAR(255) NOT NULL,
 		visibility_timeout       INTEGER UNSIGNED NOT NULL DEFAULT 30,
-		delay_seconds            INTEGER UNSIGNED NOT NULL DEFAULT 0,
-		maximum_message_size     INTEGER UNSIGNED NOT NULL DEFAULT 1,
-		message_retention_period INTEGER UNSIGNED NOT NULL DEFAULT 0,
+		delay_seconds            INTEGER UNSIGNED NOT NULL,
 		dead_letter_target       VARCHAR(255),
-		max_receive_count        INTEGER UNSIGNED NOT NULL DEFAULT 0,
+		max_receive_count        INTEGER UNSIGNED NOT NULL,
 		UNIQUE(name)
 		UNIQUE(raw_name)
 );`
@@ -224,7 +213,7 @@ CREATE TABLE IF NOT EXISTS %s (
         group_id          VARCHAR(255),
         invisible_until   INTEGER UNSIGNED NOT NULL,
 		retry_count       INTEGER UNSIGNED NOT NULL,
-        enqueue_at        INTEGER UNSIGNED,
+        enqueue_at        INTEGER UNSIGNED NOT NULL,
         UNIQUE(deduplication_id)
 );
 CREATE INDEX IF NOT EXISTS %s_idx_invisible_until_retry_count ON %s (invisible_until, retry_count);

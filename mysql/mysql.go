@@ -208,9 +208,9 @@ UPDATE %s_queue_setting SET %s WHERE name = ?
 	return fmt.Sprintf(query, db.TablePrefix, strings.Join(sets, ",")), args
 }
 
-func (SQLTemplateForMySQL) NewCreateQueueAttributeDDL() string {
+func (SQLTemplateForMySQL) NewCreateQueueAttributesDDL() string {
 	query := `
-CREATE TABLE IF NOT EXISTS %s_queue_setting (
+CREATE TABLE IF NOT EXISTS %s_queue_attributes (
         name                     VARCHAR(255) NOT NULL,
 		visibility_timeout       INTEGER UNSIGNED NOT NULL DEFAULT 30,
 		delay_seconds            INTEGER UNSIGNED NOT NULL DEFAULT 0,

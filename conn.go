@@ -437,9 +437,9 @@ func (c *Connector) GrabJobs(ctx context.Context, input *GrabJobsInput) (*GrabJo
 }
 
 func (c *Connector) handleDeadJobs(ctx context.Context, queueAttributes *QueueAttributes, deadJobs []*jobworker.Job) error {
-	if queueAttributes.HasDeadLetter() {
+	if name, ok := queueAttributes.HasDeadLetter(); ok {
 		out, err := c.GetQueueAttributes(ctx, &GetQueueAttributesInput{
-			QueueName: queueAttributes.DeadLetterTarget,
+			QueueName: name,
 		})
 		if err != nil {
 			return err

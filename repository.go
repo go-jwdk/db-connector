@@ -174,7 +174,7 @@ func (r *repository) CreateQueueTable(ctx context.Context, queueRawName string) 
 }
 
 func (r *repository) CreateQueueAttributesTable(ctx context.Context) error {
-	stmt := r.tmpl.NewCreateQueueAttributeDDL()
+	stmt := r.tmpl.NewCreateQueueAttributesDDL()
 	_, err := r.querier.ExecContext(ctx, stmt)
 	if err != nil {
 		return err

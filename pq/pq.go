@@ -207,9 +207,9 @@ UPDATE %s_queue_setting SET %s WHERE name = ?
 	return fmt.Sprintf(query, db_connector.TablePrefix, strings.Join(sets, ",")), args
 }
 
-func (SQLTemplateForPostgres) NewCreateQueueAttributeDDL() string {
+func (SQLTemplateForPostgres) NewCreateQueueAttributesDDL() string {
 	query := `
-CREATE TABLE IF NOT EXISTS %s_queue_setting (
+CREATE TABLE IF NOT EXISTS %s_queue_attributes (
         name                     VARCHAR(255) NOT NULL,
 		visibility_timeout       INTEGER NOT NULL DEFAULT 30,
 		delay_seconds            INTEGER NOT NULL DEFAULT 0,

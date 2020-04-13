@@ -13,6 +13,6 @@ type SQLTemplate interface {
 	NewUpdateQueueAttributeDML(visibilityTimeout, delaySeconds, maximumMessageSize, messageRetentionPeriod *int64, deadLetterTarget *string, maxReceiveCount *int64, queueRawName string) (string, []interface{})
 	NewFindQueueAttributeDML(queueName string) (string, []interface{})
 
-	NewCreateQueueAttributeDDL() string
+	NewCreateQueueAttributesDDL() string
 	NewCreateQueueDDL(queueRawName string) string
 }
