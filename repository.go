@@ -1,28 +1,21 @@
-package internal
+package dbconn
 
 import (
 	"context"
-	"database/sql"
 
-	"github.com/go-jwdk/db-connector"
+	"github.com/go-jwdk/db-connector/internal"
 )
 
-type Querier interface {
-	ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
-	QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error)
-	QueryRowContext(ctx context.Context, query string, args ...interface{}) *sql.Row
+func newRepository(querier internal.Querier, tmpl internal.SQLTemplate) *repository {
+	return &repository{querier: querier, tmpl: tmpl}
 }
 
-func NewRepository(querier Querier, tmpl SQLTemplate) *Repository {
-	return &Repository{querier: querier, tmpl: tmpl}
+type repository struct {
+	querier internal.Querier
+	tmpl    internal.SQLTemplate
 }
 
-type Repository struct {
-	querier Querier
-	tmpl    SQLTemplate
-}
-
-func (r *Repository) EnqueueJob(ctx context.Context, queue, jobID, args string, deduplicationID, groupID *string, delaySeconds int64) error {
+func (r *repository) EnqueueJob(ctx context.Context, queue, jobID, args string, deduplicationID, groupID *string, delaySeconds int64) error {
 	stmt, stmtArgs := r.tmpl.NewEnqueueJobDML(queue,
 		jobID, args, deduplicationID, groupID, delaySeconds)
 	_, err := r.querier.ExecContext(ctx, stmt, stmtArgs...)
@@ -32,7 +25,7 @@ func (r *Repository) EnqueueJob(ctx context.Context, queue, jobID, args string, 
 	return nil
 }
 
-func (r *Repository) EnqueueJobWithTime(ctx context.Context, queue string, jobID, args string, deduplicationID, groupID *string, enqueueAt int64) error {
+func (r *repository) EnqueueJobWithTime(ctx context.Context, queue string, jobID, args string, deduplicationID, groupID *string, enqueueAt int64) error {
 	stmt, stmtArgs := r.tmpl.NewEnqueueJobWithTimeDML(queue,
 		jobID, args, deduplicationID, groupID, enqueueAt)
 	_, err := r.querier.ExecContext(ctx, stmt, stmtArgs...)
@@ -42,7 +35,7 @@ func (r *Repository) EnqueueJobWithTime(ctx context.Context, queue string, jobID
 	return nil
 }
 
-func (r *Repository) DeleteJob(ctx context.Context, queue string, jobID string) error {
+func (r *repository) DeleteJob(ctx context.Context, queue string, jobID string) error {
 	stmt, args := r.tmpl.NewDeleteJobDML(queue, jobID)
 	_, err := r.querier.ExecContext(ctx, stmt, args...)
 	if err != nil {
@@ -51,11 +44,11 @@ func (r *Repository) DeleteJob(ctx context.Context, queue string, jobID string) 
 	return nil
 }
 
-func (r *Repository) GetJob(ctx context.Context, queue string, jobID string) (*Job, error) {
+func (r *repository) GetJob(ctx context.Context, queue string, jobID string) (*internal.Job, error) {
 	stmt, args := r.tmpl.NewFindJobDML(queue, jobID)
 	row := r.querier.QueryRowContext(ctx, stmt, args...)
 
-	var job Job
+	var job internal.Job
 	if err := row.Scan(
 		&job.SecID,
 		&job.JobID,
@@ -71,7 +64,7 @@ func (r *Repository) GetJob(ctx context.Context, queue string, jobID string) (*J
 	return &job, nil
 }
 
-func (r *Repository) GetJobs(ctx context.Context, queue string, limit int64) ([]*Job, error) {
+func (r *repository) GetJobs(ctx context.Context, queue string, limit int64) ([]*internal.Job, error) {
 
 	if limit == 0 {
 		limit = 1
@@ -83,9 +76,9 @@ func (r *Repository) GetJobs(ctx context.Context, queue string, limit int64) ([]
 		return nil, err
 	}
 
-	var jobs []*Job
+	var jobs []*internal.Job
 	for rows.Next() {
-		var job Job
+		var job internal.Job
 		if err := rows.Scan(
 			&job.SecID,
 			&job.JobID,
@@ -103,7 +96,7 @@ func (r *Repository) GetJobs(ctx context.Context, queue string, limit int64) ([]
 	return jobs, nil
 }
 
-func (r *Repository) GrabJob(ctx context.Context,
+func (r *repository) GrabJob(ctx context.Context,
 	queue string, jobID string, currentRetryCount, currentInvisibleUntil, invisibleTime int64) (grabbed bool, err error) {
 	stmt, args := r.tmpl.NewHideJobDML(queue, jobID, currentRetryCount, currentInvisibleUntil, invisibleTime)
 	result, err := r.querier.ExecContext(ctx, stmt, args...)
@@ -114,7 +107,7 @@ func (r *Repository) GrabJob(ctx context.Context,
 	return affected == 1, nil
 }
 
-func (r *Repository) UpdateJobVisibility(ctx context.Context, queueRawName, jobID string, visibilityTimeout int64) (updated bool, err error) {
+func (r *repository) UpdateJobVisibility(ctx context.Context, queueRawName, jobID string, visibilityTimeout int64) (updated bool, err error) {
 	stmt, args := r.tmpl.NewUpdateJobByVisibilityTimeoutDML(queueRawName, jobID, visibilityTimeout)
 	result, err := r.querier.ExecContext(ctx, stmt, args...)
 	if err != nil {
@@ -124,10 +117,10 @@ func (r *Repository) UpdateJobVisibility(ctx context.Context, queueRawName, jobI
 	return affected == 1, nil
 }
 
-func (r *Repository) GetQueueAttributes(ctx context.Context, queueName string) (*db.QueueAttributes, error) {
+func (r *repository) GetQueueAttributes(ctx context.Context, queueName string) (*QueueAttributes, error) {
 	stmt, args := r.tmpl.NewFindQueueAttributeDML(queueName)
 	row := r.querier.QueryRowContext(ctx, stmt, args...)
-	var q db.QueueAttributes
+	var q QueueAttributes
 	err := row.Scan(
 		&q.Name,
 		&q.RawName,
@@ -144,7 +137,7 @@ func (r *Repository) GetQueueAttributes(ctx context.Context, queueName string) (
 	return &q, nil
 }
 
-func (r *Repository) CreateQueueAttributes(ctx context.Context, queueName, queueRawName string, visibilityTimeout, delaySeconds, maximumMessageSize, messageRetentionPeriod, maxReceiveCount int64, deadLetterTarget string) error {
+func (r *repository) CreateQueueAttributes(ctx context.Context, queueName, queueRawName string, visibilityTimeout, delaySeconds, maximumMessageSize, messageRetentionPeriod, maxReceiveCount int64, deadLetterTarget string) error {
 	stmt, args := r.tmpl.NewAddQueueAttributeDML(queueName, queueRawName, delaySeconds, maximumMessageSize, messageRetentionPeriod, deadLetterTarget, maxReceiveCount, visibilityTimeout)
 	_, err := r.querier.ExecContext(ctx, stmt, args...)
 	if err != nil {
@@ -153,7 +146,7 @@ func (r *Repository) CreateQueueAttributes(ctx context.Context, queueName, queue
 	return nil
 }
 
-func (r *Repository) UpdateQueueAttributes(ctx context.Context, queueRawName string,
+func (r *repository) UpdateQueueAttributes(ctx context.Context, queueRawName string,
 	visibilityTimeout, delaySeconds, maximumMessageSize, messageRetentionPeriod, maxReceiveCount *int64, deadLetterTarget *string) (updated bool, err error) {
 	stmt, args := r.tmpl.NewUpdateQueueAttributeDML(
 		visibilityTimeout,
@@ -171,7 +164,7 @@ func (r *Repository) UpdateQueueAttributes(ctx context.Context, queueRawName str
 	return affected == 1, nil
 }
 
-func (r *Repository) DefineQueue(ctx context.Context, queueRawName string) error {
+func (r *repository) CreateQueueTable(ctx context.Context, queueRawName string) error {
 	stmt := r.tmpl.NewCreateQueueDDL(queueRawName)
 	_, err := r.querier.ExecContext(ctx, stmt)
 	if err != nil {
@@ -180,7 +173,7 @@ func (r *Repository) DefineQueue(ctx context.Context, queueRawName string) error
 	return nil
 }
 
-func (r *Repository) DefineQueueAttributes(ctx context.Context) error {
+func (r *repository) CreateQueueAttributesTable(ctx context.Context) error {
 	stmt := r.tmpl.NewCreateQueueAttributeDDL()
 	_, err := r.querier.ExecContext(ctx, stmt)
 	if err != nil {

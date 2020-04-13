@@ -80,8 +80,8 @@ type Setting struct {
 }
 
 func Open(s Setting) (*Connector, error) {
-	repo := internal.NewRepository(s.DB, s.SQLTemplate)
-	err := repo.DefineQueueAttributes(context.Background())
+	repo := newRepository(s.DB, s.SQLTemplate)
+	err := repo.CreateQueueAttributesTable(context.Background())
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +144,7 @@ func (c *Connector) Enqueue(ctx context.Context, input *jobworker.EnqueueInput) 
 	if err != nil {
 		return nil, fmt.Errorf("could not get queue attributes: %w", err)
 	}
-	repo := internal.NewRepository(c.db, c.sqlTmpl)
+	repo := newRepository(c.db, c.sqlTmpl)
 	deduplicationID, groupID, delaySeconds := extractMetadata(input.Metadata)
 	_, err = c.retryer.Do(ctx, func(ctx context.Context) error {
 		jobID := newJobID()
@@ -217,7 +217,7 @@ func (c *Connector) CompleteJob(ctx context.Context, input *jobworker.CompleteJo
 		return nil, fmt.Errorf("could not get queue attributes: %w", err)
 	}
 
-	repo := internal.NewRepository(c.db, c.sqlTmpl)
+	repo := newRepository(c.db, c.sqlTmpl)
 	rawJob := input.Job.Raw.(*internal.Job)
 	_, err = c.retryer.Do(ctx, func(ctx context.Context) error {
 		return repo.DeleteJob(ctx, out.Attributes.RawName, rawJob.JobID)
@@ -262,7 +262,7 @@ type GetQueueAttributesOutput struct {
 func (c *Connector) GetQueueAttributes(ctx context.Context, input *GetQueueAttributesInput) (*GetQueueAttributesOutput, error) {
 	v, ok := c.name2Queue.Load(input.QueueName)
 	if !ok || v == nil {
-		repo := internal.NewRepository(c.db, c.sqlTmpl)
+		repo := newRepository(c.db, c.sqlTmpl)
 		q, err := repo.GetQueueAttributes(ctx, input.QueueName)
 		if internal.IsErrNoRows(err) {
 			return nil, ErrNotFoundQueue
@@ -288,7 +288,7 @@ type DeleteJobBatchOutput struct {
 func (c *Connector) DeleteJobBatch(ctx context.Context, input *DeleteJobBatchInput) (*DeleteJobBatchOutput, error) {
 	_, err := c.retryer.Do(ctx, func(ctx context.Context) error {
 		return internal.WithTransaction(c.db, func(tx *sql.Tx) error {
-			repo := internal.NewRepository(tx, c.sqlTmpl)
+			repo := newRepository(tx, c.sqlTmpl)
 			for _, job := range input.Jobs {
 				raw := job.Raw.(*internal.Job)
 				out, err := c.GetQueueAttributes(ctx, &GetQueueAttributesInput{
@@ -330,7 +330,7 @@ func (c *Connector) MoveJobBatch(ctx context.Context, input *MoveJobBatchInput) 
 	}
 	_, err = c.retryer.Do(ctx, func(ctx context.Context) error {
 		return internal.WithTransaction(c.db, func(tx *sql.Tx) error {
-			repo := internal.NewRepository(tx, c.sqlTmpl)
+			repo := newRepository(tx, c.sqlTmpl)
 			for _, job := range input.Jobs {
 				raw := job.Raw.(*internal.Job)
 				err := repo.EnqueueJobWithTime(ctx,
@@ -385,7 +385,7 @@ func (c *Connector) GrabJobs(ctx context.Context, input *GrabJobsInput) (*GrabJo
 		return nil, err
 	}
 
-	repo := internal.NewRepository(c.db, c.sqlTmpl)
+	repo := newRepository(c.db, c.sqlTmpl)
 	rawJobs, err := repo.GetJobs(ctx, out.Attributes.RawName, input.MaxNumberOfJobs)
 	if err != nil {
 		return nil, err
@@ -483,7 +483,7 @@ func extractMetadata(metadata map[string]string) (
 
 func (c *Connector) enqueueJobBatch(ctx context.Context, queue *QueueAttributes, entries []*jobworker.EnqueueBatchEntry) error {
 	return internal.WithTransaction(c.db, func(tx *sql.Tx) error {
-		repo := internal.NewRepository(tx, c.sqlTmpl)
+		repo := newRepository(tx, c.sqlTmpl)
 		for _, entry := range entries {
 			deduplicationID, groupID, delaySeconds := extractMetadata(entry.Metadata)
 			err := repo.EnqueueJob(ctx,
@@ -517,7 +517,7 @@ type ChangeJobVisibilityInput struct {
 type ChangeJobVisibilityOutput struct{}
 
 func (c *Connector) ChangeJobVisibility(ctx context.Context, input *ChangeJobVisibilityInput) (*ChangeJobVisibilityOutput, error) {
-	repo := internal.NewRepository(c.db, c.sqlTmpl)
+	repo := newRepository(c.db, c.sqlTmpl)
 	out, err := c.GetQueueAttributes(ctx, &GetQueueAttributesInput{
 		QueueName: input.Job.QueueName,
 	})
@@ -570,7 +570,7 @@ func (c *Connector) RedriveJob(ctx context.Context, input *RedriveJobInput) (*Re
 }
 
 func (c *Connector) redriveJob(ctx context.Context, from, to *QueueAttributes, jobID string, delaySeconds int64) error {
-	repo := internal.NewRepository(c.db, c.sqlTmpl)
+	repo := newRepository(c.db, c.sqlTmpl)
 	job, err := repo.GetJob(ctx, from.RawName, jobID)
 	if err != nil {
 		if internal.IsErrNoRows(err) {
@@ -580,7 +580,7 @@ func (c *Connector) redriveJob(ctx context.Context, from, to *QueueAttributes, j
 		return err
 	}
 	return internal.WithTransaction(c.db, func(tx *sql.Tx) error {
-		repo := internal.NewRepository(tx, c.sqlTmpl)
+		repo := newRepository(tx, c.sqlTmpl)
 		err = repo.EnqueueJob(ctx,
 			to.RawName,
 			job.JobID,
@@ -623,9 +623,9 @@ type CreateQueueOutput struct{}
 func (c *Connector) CreateQueue(ctx context.Context, input *CreateQueueInput) (*CreateQueueOutput, error) {
 	input = input.applyDefaultValues()
 	queueRawName := queueRawName(input.Name)
-	repo := internal.NewRepository(c.db, c.sqlTmpl)
+	repo := newRepository(c.db, c.sqlTmpl)
 	_, err := c.retryer.Do(ctx, func(ctx context.Context) error {
-		err := repo.DefineQueue(ctx, queueRawName)
+		err := repo.CreateQueueTable(ctx, queueRawName)
 		if err != nil {
 			return err
 		}
@@ -669,7 +669,7 @@ type SetQueueAttributesInput struct {
 type SetQueueAttributesOutput struct{}
 
 func (c *Connector) SetQueueAttributes(ctx context.Context, input *SetQueueAttributesInput) (*SetQueueAttributesOutput, error) {
-	repo := internal.NewRepository(c.db, c.sqlTmpl)
+	repo := newRepository(c.db, c.sqlTmpl)
 	_, err := c.retryer.Do(ctx, func(ctx context.Context) error {
 		out, err := c.GetQueueAttributes(ctx, &GetQueueAttributesInput{
 			QueueName: input.QueueName,

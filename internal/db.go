@@ -1,6 +1,15 @@
 package internal
 
-import "database/sql"
+import (
+	"context"
+	"database/sql"
+)
+
+type Querier interface {
+	ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
+	QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...interface{}) *sql.Row
+}
 
 func WithTransaction(db *sql.DB, ope func(tx *sql.Tx) error) (err error) {
 	tx, err := db.Begin()

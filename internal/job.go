@@ -11,7 +11,7 @@ func NewJob(queueName string, job *Job, conn jobworker.Connector) *jobworker.Job
 		Conn:            conn,
 		QueueName:       queueName,
 		Content:         job.Content,
-		Metadata:        newMetadata(job),
+		Metadata:        toMetadata(job),
 		CustomAttribute: make(map[string]*jobworker.CustomAttribute),
 		Raw:             job,
 	}
@@ -40,7 +40,7 @@ const (
 	MetadataKeyDelaySeconds = "DelaySeconds"
 )
 
-func newMetadata(job *Job) map[string]string {
+func toMetadata(job *Job) map[string]string {
 	metadata := make(map[string]string)
 	metadata[MetadataKeySecID] = strconv.FormatInt(job.SecID, 10)
 	metadata[MetadataKeyJobID] = job.JobID
