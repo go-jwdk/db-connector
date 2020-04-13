@@ -1,4 +1,4 @@
-package db
+package dbconn
 
 import (
 	"context"
@@ -128,7 +128,7 @@ func (c *Connector) Subscribe(ctx context.Context, input *jobworker.SubscribeInp
 		QueueName: input.Queue,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("could not resolve queue: %w", err)
+		return nil, fmt.Errorf("could not get queue attributes: %w", err)
 	}
 	sub = newSubscription(out.Attributes, c, c, input.Metadata)
 	go sub.Start()
@@ -142,7 +142,7 @@ func (c *Connector) Enqueue(ctx context.Context, input *jobworker.EnqueueInput) 
 		QueueName: input.Queue,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not get queue attributes: %w", err)
 	}
 	repo := internal.NewRepository(c.db, c.sqlTmpl)
 	deduplicationID, groupID, delaySeconds := extractMetadata(input.Metadata)
@@ -187,7 +187,7 @@ func (c *Connector) EnqueueBatch(ctx context.Context, input *jobworker.EnqueueBa
 		QueueName: input.Queue,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not get queue attributes: %w", err)
 	}
 
 	_, err = c.retryer.Do(ctx, func(ctx context.Context) error {
@@ -214,7 +214,7 @@ func (c *Connector) CompleteJob(ctx context.Context, input *jobworker.CompleteJo
 		QueueName: input.Job.QueueName,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not get queue attributes: %w", err)
 	}
 
 	repo := internal.NewRepository(c.db, c.sqlTmpl)

@@ -1,4 +1,4 @@
-package db
+package dbconn
 
 type QueueAttributes struct {
 	Name                   string

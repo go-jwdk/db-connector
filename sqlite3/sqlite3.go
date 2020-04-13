@@ -6,12 +6,63 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-jwdk/db-connector"
+	dbconn "github.com/go-jwdk/db-connector"
 
 	"github.com/go-jwdk/jobworker"
 	"github.com/mattn/go-sqlite3"
-	"github.com/vvatanabe/goretryer/exponential"
 )
+
+var provider = Provider{}
+
+const connName = "sqlite3"
+
+func init() {
+	jobworker.Register(connName, provider)
+}
+
+type Provider struct{}
+
+func (Provider) Open(attrs map[string]interface{}) (jobworker.Connector, error) {
+	values := dbconn.ConnAttrsToValues(attrs)
+	values.ApplyDefaultValues()
+	var s Setting
+	s.DSN = values.DSN
+	s.MaxOpenConns = values.MaxOpenConns
+	s.MaxIdleConns = values.MaxIdleConns
+	s.ConnMaxLifetime = values.ConnMaxLifetime
+	s.NumMaxRetries = values.NumMaxRetries
+	return Open(&s)
+}
+
+type Setting struct {
+	DSN                   string
+	MaxOpenConns          int
+	MaxIdleConns          int
+	ConnMaxLifetime       *time.Duration
+	NumMaxRetries         *int
+	QueueAttributesExpire *int64
+}
+
+func Open(s *Setting) (*dbconn.Connector, error) {
+	db, err := sql.Open(connName, s.DSN)
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxOpenConns(s.MaxOpenConns)
+	db.SetMaxIdleConns(s.MaxIdleConns)
+	if s.ConnMaxLifetime != nil {
+		db.SetConnMaxLifetime(*s.ConnMaxLifetime)
+	}
+	return dbconn.Open(dbconn.Setting{
+		Name:                  connName,
+		DB:                    db,
+		SQLTemplate:           sqlTemplate{},
+		IsUniqueViolation:     isUniqueViolation,
+		IsDeadlockDetected:    isDeadlockDetected,
+		NumMaxRetries:         s.NumMaxRetries,
+		QueueAttributesExpire: s.QueueAttributesExpire,
+	})
+}
 
 var isUniqueViolation = func(err error) bool {
 	if err == nil {
@@ -36,78 +87,24 @@ var isDeadlockDetected = func(err error) bool {
 	return false
 }
 
-var provider = Provider{}
-
-const connName = "sqlite3"
-
-func init() {
-	jobworker.Register(connName, provider)
+type sqlTemplate struct {
 }
 
-type Provider struct{}
-
-func (Provider) Open(attrs map[string]interface{}) (jobworker.Connector, error) {
-	values := db_connector.ConnAttrsToValues(attrs)
-	values.ApplyDefaultValues()
-	var s Setting
-	s.DSN = values.DSN
-	s.MaxOpenConns = values.MaxOpenConns
-	s.MaxIdleConns = values.MaxIdleConns
-	s.ConnMaxLifetime = values.ConnMaxLifetime
-	s.NumMaxRetries = values.NumMaxRetries
-	return Open(&s)
-}
-
-type Setting struct {
-	DSN             string
-	MaxOpenConns    int
-	MaxIdleConns    int
-	ConnMaxLifetime *time.Duration
-	NumMaxRetries   *int
-}
-
-func Open(s *Setting) (*db_connector.Connector, error) {
-	db, err := sql.Open(connName, s.DSN)
-	if err != nil {
-		return nil, err
-	}
-	db.SetMaxOpenConns(s.MaxOpenConns)
-	db.SetMaxIdleConns(s.MaxIdleConns)
-	if s.ConnMaxLifetime != nil {
-		db.SetConnMaxLifetime(*s.ConnMaxLifetime)
-	}
-	var er exponential.Retryer
-	if s.NumMaxRetries != nil {
-		er.NumMaxRetries = *s.NumMaxRetries
-	}
-	return &db_connector.Connector{
-		ConnName:           connName,
-		DB:                 db,
-		SQLTemplate:        SQLTemplateForSQLite3{},
-		IsUniqueViolation:  isUniqueViolation,
-		IsDeadlockDetected: isDeadlockDetected,
-		Retryer:            er,
-	}, nil
-}
-
-type SQLTemplateForSQLite3 struct {
-}
-
-func (SQLTemplateForSQLite3) NewFindJobDML(table string, jobID string) (string, []interface{}) {
+func (sqlTemplate) NewFindJobDML(table string, jobID string) (string, []interface{}) {
 	query := `
 SELECT * FROM %s WHERE job_id=?
 `
 	return fmt.Sprintf(query, table), []interface{}{jobID}
 }
 
-func (SQLTemplateForSQLite3) NewFindJobsDML(table string, limit int64) (stmt string, args []interface{}) {
+func (sqlTemplate) NewFindJobsDML(table string, limit int64) (stmt string, args []interface{}) {
 	query := `
 SELECT * FROM %s WHERE invisible_until <= strftime('%%s', 'now') ORDER BY sec_id ASC LIMIT %d
 `
 	return fmt.Sprintf(query, table, limit), []interface{}{}
 }
 
-func (SQLTemplateForSQLite3) NewHideJobDML(table string, jobID string, oldRetryCount, oldInvisibleUntil, invisibleTime int64) (stmt string, args []interface{}) {
+func (sqlTemplate) NewHideJobDML(table string, jobID string, oldRetryCount, oldInvisibleUntil, invisibleTime int64) (stmt string, args []interface{}) {
 	query := `
 UPDATE %s
 SET retry_count=retry_count+1, invisible_until=strftime('%%s', 'now')+?
@@ -119,7 +116,7 @@ WHERE
 	return fmt.Sprintf(query, table), []interface{}{invisibleTime, jobID, oldRetryCount, oldInvisibleUntil}
 }
 
-func (SQLTemplateForSQLite3) NewEnqueueJobDML(table, jobID, content string, deduplicationID, groupID *string, delaySeconds int64) (stmt string, args []interface{}) {
+func (sqlTemplate) NewEnqueueJobDML(table, jobID, content string, deduplicationID, groupID *string, delaySeconds int64) (stmt string, args []interface{}) {
 	query := `
 INSERT INTO %s (job_id, content, deduplication_id, group_id, retry_count, invisible_until, enqueue_at)
 VALUES (?, ?, ?, ?, 0, strftime('%%s', 'now') + ?, strftime('%%s', 'now') )
@@ -128,7 +125,7 @@ VALUES (?, ?, ?, ?, 0, strftime('%%s', 'now') + ?, strftime('%%s', 'now') )
 
 }
 
-func (SQLTemplateForSQLite3) NewEnqueueJobWithTimeDML(table, jobID, content string, deduplicationID, groupID *string, enqueueAt int64) (stmt string, args []interface{}) {
+func (sqlTemplate) NewEnqueueJobWithTimeDML(table, jobID, content string, deduplicationID, groupID *string, enqueueAt int64) (stmt string, args []interface{}) {
 	query := `
 INSERT INTO %s (job_id, content, deduplication_id, group_id, retry_count, invisible_until, enqueue_at)
 VALUES (?, ?, ?, ?, 0, 0, ?)
@@ -136,7 +133,7 @@ VALUES (?, ?, ?, ?, 0, 0, ?)
 	return fmt.Sprintf(query, table), []interface{}{jobID, content, deduplicationID, groupID, enqueueAt}
 }
 
-func (SQLTemplateForSQLite3) NewDeleteJobDML(table, jobID string) (stmt string, args []interface{}) {
+func (sqlTemplate) NewDeleteJobDML(table, jobID string) (stmt string, args []interface{}) {
 	query := `
 DELETE FROM %s WHERE job_id = ?
 `
@@ -144,30 +141,30 @@ DELETE FROM %s WHERE job_id = ?
 		[]interface{}{jobID}
 }
 
-func (SQLTemplateForSQLite3) NewFindQueueAttributeDML(table string) (stmt string, args []interface{}) {
+func (sqlTemplate) NewFindQueueAttributeDML(table string) (stmt string, args []interface{}) {
 	query := `
 SELECT * FROM %s_queue_attribute WHERE name=?
 `
-	return fmt.Sprintf(query, db_connector.TablePrefix),
+	return fmt.Sprintf(query, dbconn.TablePrefix),
 		[]interface{}{table}
 }
 
-func (SQLTemplateForSQLite3) NewUpdateJobByVisibilityTimeoutDML(table string, jobID string, visibilityTimeout int64) (stmt string, args []interface{}) {
+func (sqlTemplate) NewUpdateJobByVisibilityTimeoutDML(table string, jobID string, visibilityTimeout int64) (stmt string, args []interface{}) {
 	query := `
 UPDATE %s SET visible_after = strftime('%%s', 'now') + ? WHERE job_id = ?
 `
 	return fmt.Sprintf(query, table), []interface{}{visibilityTimeout, jobID}
 }
 
-func (SQLTemplateForSQLite3) NewAddQueueAttributeDML(queue, table string, delaySeconds, maximumMessageSize, messageRetentionPeriod int64, deadLetterTarget string, maxReceiveCount, visibilityTimeout int64) (stmt string, args []interface{}) {
+func (sqlTemplate) NewAddQueueAttributeDML(queue, table string, delaySeconds, maximumMessageSize, messageRetentionPeriod int64, deadLetterTarget string, maxReceiveCount, visibilityTimeout int64) (stmt string, args []interface{}) {
 	query := `
 INSERT INTO %s_queue_attribute (name, raw_name, visibility_timeout, delay_seconds, maximum_message_size, message_retention_period, dead_letter_target, max_receive_count)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 `
-	return fmt.Sprintf(query, db.TablePrefix), []interface{}{queue, table, visibilityTimeout, delaySeconds, maximumMessageSize, messageRetentionPeriod, deadLetterTarget, maxReceiveCount}
+	return fmt.Sprintf(query, dbconn.TablePrefix), []interface{}{queue, table, visibilityTimeout, delaySeconds, maximumMessageSize, messageRetentionPeriod, deadLetterTarget, maxReceiveCount}
 }
 
-func (SQLTemplateForSQLite3) NewUpdateQueueAttributeDML(visibilityTimeout, delaySeconds, maximumMessageSize, messageRetentionPeriod *int64, deadLetterTarget *string, maxReceiveCount *int64, table string) (stmt string, args []interface{}) {
+func (sqlTemplate) NewUpdateQueueAttributeDML(visibilityTimeout, delaySeconds, maximumMessageSize, messageRetentionPeriod *int64, deadLetterTarget *string, maxReceiveCount *int64, table string) (stmt string, args []interface{}) {
 	query := `
 UPDATE %s_queue_attribute SET %s WHERE raw_name = ?
 `
@@ -197,10 +194,10 @@ UPDATE %s_queue_attribute SET %s WHERE raw_name = ?
 		args = append(args, *maxReceiveCount)
 	}
 	args = append(args, table)
-	return fmt.Sprintf(query, db.TablePrefix, strings.Join(sets, ",")), args
+	return fmt.Sprintf(query, dbconn.TablePrefix, strings.Join(sets, ",")), args
 }
 
-func (SQLTemplateForSQLite3) NewCreateQueueAttributeDDL() string {
+func (sqlTemplate) NewCreateQueueAttributeDDL() string {
 	query := `
 CREATE TABLE IF NOT EXISTS %s_queue_attribute (
         name                     VARCHAR(255) NOT NULL,
@@ -214,10 +211,10 @@ CREATE TABLE IF NOT EXISTS %s_queue_attribute (
 		UNIQUE(name)
 		UNIQUE(raw_name)
 );`
-	return fmt.Sprintf(query, db_connector.TablePrefix)
+	return fmt.Sprintf(query, dbconn.TablePrefix)
 }
 
-func (SQLTemplateForSQLite3) NewCreateQueueDDL(table string) string {
+func (sqlTemplate) NewCreateQueueDDL(table string) string {
 	query := `
 CREATE TABLE IF NOT EXISTS %s (
         sec_id            INTEGER PRIMARY KEY,
