@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
-	"time"
 
 	dbconn "github.com/go-jwdk/db-connector"
 
@@ -22,28 +21,13 @@ func init() {
 
 type Provider struct{}
 
-func (Provider) Open(attrs map[string]interface{}) (jobworker.Connector, error) {
-	values := dbconn.ConnAttrsToValues(attrs)
-	values.ApplyDefaultValues()
-	var s Setting
-	s.DSN = values.DSN
-	s.MaxOpenConns = values.MaxOpenConns
-	s.MaxIdleConns = values.MaxIdleConns
-	s.ConnMaxLifetime = values.ConnMaxLifetime
-	s.NumMaxRetries = values.NumMaxRetries
-	return Open(&s)
+func (Provider) Open(cfgMap map[string]interface{}) (jobworker.Connector, error) {
+	cfg := dbconn.ParseConfig(cfgMap)
+	cfg.ApplyDefaultValues()
+	return Open(cfg)
 }
 
-type Setting struct {
-	DSN                   string
-	MaxOpenConns          int
-	MaxIdleConns          int
-	ConnMaxLifetime       *time.Duration
-	NumMaxRetries         *int
-	QueueAttributesExpire *int64
-}
-
-func Open(s *Setting) (*dbconn.Connector, error) {
+func Open(s *dbconn.Config) (*dbconn.Connector, error) {
 	db, err := sql.Open(connName, s.DSN)
 	if err != nil {
 		return nil, err
@@ -53,14 +37,14 @@ func Open(s *Setting) (*dbconn.Connector, error) {
 	if s.ConnMaxLifetime != nil {
 		db.SetConnMaxLifetime(*s.ConnMaxLifetime)
 	}
-	return dbconn.Open(dbconn.Setting{
+	return dbconn.Open(&dbconn.RawConfig{
 		Name:                  connName,
 		DB:                    db,
 		SQLTemplate:           sqlTemplate{},
 		IsUniqueViolation:     isUniqueViolation,
 		IsDeadlockDetected:    isDeadlockDetected,
-		NumMaxRetries:         s.NumMaxRetries,
-		QueueAttributesExpire: s.QueueAttributesExpire,
+		NumMaxRetries:         *s.NumMaxRetries,
+		QueueAttributesExpire: *s.QueueAttributesExpire,
 	})
 }
 
@@ -88,6 +72,10 @@ var isDeadlockDetected = func(err error) bool {
 }
 
 type sqlTemplate struct {
+}
+
+func (sqlTemplate) NewFindQueueAttributesDML(queueName string) (string, []interface{}) {
+	panic("implement me")
 }
 
 func (sqlTemplate) NewFindJobDML(table string, jobID string) (string, []interface{}) {

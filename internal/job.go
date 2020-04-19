@@ -20,7 +20,7 @@ func NewJob(queueName string, job *Job, conn jobworker.Connector) *jobworker.Job
 type Job struct {
 	SecID           int64
 	JobID           string
-	Content         *string
+	Content         string
 	DeduplicationID *string
 	GroupID         *string
 	InvisibleUntil  int64

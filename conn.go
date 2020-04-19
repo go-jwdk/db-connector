@@ -17,89 +17,94 @@ import (
 
 const (
 	TablePrefix = "jwdk"
-	LogPrefix   = "[" + TablePrefix + "]"
 
-	connAttributeNameDSN             = "DSN"
-	connAttributeNameMaxOpenConns    = "MaxOpenConns"
-	connAttributeNameMaxIdleConns    = "MaxMaxIdleConns"
-	connAttributeNameConnMaxLifetime = "ConnMaxLifetime"
-	connAttributeNameNumMaxRetries   = "NumMaxRetries"
+	logPrefix = "[" + TablePrefix + "]"
+
+	connAttributeNameDSN                   = "DSN"
+	connAttributeNameMaxOpenConns          = "MaxOpenConns"
+	connAttributeNameMaxIdleConns          = "MaxMaxIdleConns"
+	connAttributeNameConnMaxLifetime       = "ConnMaxLifetime"
+	connAttributeNameNumMaxRetries         = "NumMaxRetries"
+	connAttributeNameQueueAttributesExpire = "QueueAttributesExpire"
 
 	defaultNumMaxRetries         = 3
 	defaultQueueAttributesExpire = time.Minute
 	defaultVisibilityTimeout     = int64(30)
 )
 
-type connAttributeValues struct {
-	DSN             string
-	MaxOpenConns    int
-	MaxIdleConns    int
-	ConnMaxLifetime *time.Duration
-	NumMaxRetries   *int
+type Config struct {
+	DSN                   string
+	MaxOpenConns          int
+	MaxIdleConns          int
+	ConnMaxLifetime       *time.Duration
+	NumMaxRetries         *int
+	QueueAttributesExpire *time.Duration
 }
 
-func (v *connAttributeValues) ApplyDefaultValues() {
+func (v *Config) ApplyDefaultValues() {
 	if v.NumMaxRetries == nil {
 		i := defaultNumMaxRetries
 		v.NumMaxRetries = &i
 	}
+	if v.QueueAttributesExpire == nil {
+		i := defaultQueueAttributesExpire
+		v.QueueAttributesExpire = &i
+	}
 }
 
-func ConnAttrsToValues(attrs map[string]interface{}) *connAttributeValues {
-	var values connAttributeValues
-	for k, v := range attrs {
+func ParseConfig(cfgMap map[string]interface{}) *Config {
+	var cfg Config
+	for k, v := range cfgMap {
 		switch k {
 		case connAttributeNameDSN:
 			s := v.(string)
-			values.DSN = s
+			cfg.DSN = s
 		case connAttributeNameMaxOpenConns:
 			s := v.(int)
-			values.MaxOpenConns = s
+			cfg.MaxOpenConns = s
 		case connAttributeNameMaxIdleConns:
 			s := v.(int)
-			values.MaxIdleConns = s
+			cfg.MaxIdleConns = s
 		case connAttributeNameConnMaxLifetime:
 			s := v.(time.Duration)
-			values.ConnMaxLifetime = &s
+			cfg.ConnMaxLifetime = &s
 		case connAttributeNameNumMaxRetries:
 			s := v.(int)
-			values.NumMaxRetries = &s
+			cfg.NumMaxRetries = &s
+		case connAttributeNameQueueAttributesExpire:
+			s := v.(time.Duration)
+			cfg.QueueAttributesExpire = &s
 		}
 	}
-	return &values
+	return &cfg
 }
 
-type Setting struct {
+type RawConfig struct {
 	Name                  string
 	DB                    *sql.DB
 	SQLTemplate           internal.SQLTemplate
 	IsUniqueViolation     func(err error) bool
 	IsDeadlockDetected    func(err error) bool
-	NumMaxRetries         *int
-	QueueAttributesExpire *int64
+	NumMaxRetries         int
+	QueueAttributesExpire time.Duration
 }
 
-func Open(s Setting) (*Connector, error) {
-	repo := newRepository(s.DB, s.SQLTemplate)
+func Open(cfg *RawConfig) (*Connector, error) {
+	repo := newRepository(cfg.DB, cfg.SQLTemplate)
 	err := repo.CreateQueueAttributesTable(context.Background())
 	if err != nil {
 		return nil, err
 	}
-	var er exponential.Retryer
-	if s.NumMaxRetries != nil {
-		er.NumMaxRetries = *s.NumMaxRetries
-	}
-	queueAttributesExpire := defaultQueueAttributesExpire
-	if s.QueueAttributesExpire != nil {
-		queueAttributesExpire = time.Duration(*s.QueueAttributesExpire) * time.Minute
+	er := exponential.Retryer{
+		NumMaxRetries: cfg.NumMaxRetries,
 	}
 	return &Connector{
-		name:                  s.Name,
-		db:                    s.DB,
-		sqlTmpl:               s.SQLTemplate,
-		isUniqueViolation:     s.IsUniqueViolation,
-		isDeadlockDetected:    s.IsDeadlockDetected,
-		queueAttributesExpire: queueAttributesExpire,
+		name:                  cfg.Name,
+		db:                    cfg.DB,
+		sqlTmpl:               cfg.SQLTemplate,
+		isUniqueViolation:     cfg.IsUniqueViolation,
+		isDeadlockDetected:    cfg.IsDeadlockDetected,
+		queueAttributesExpire: cfg.QueueAttributesExpire,
 		retryer:               er,
 	}, nil
 }
@@ -698,4 +703,15 @@ func (c *Connector) SetQueueAttributes(ctx context.Context, input *SetQueueAttri
 		return nil, err
 	}
 	return &SetQueueAttributesOutput{}, nil
+}
+
+func (c *Connector) debug(args ...interface{}) {
+	if c.verbose() {
+		args = append([]interface{}{logPrefix}, args...)
+		c.loggerFunc(args...)
+	}
+}
+
+func (c *Connector) verbose() bool {
+	return c.loggerFunc != nil
 }
