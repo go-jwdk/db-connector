@@ -74,10 +74,6 @@ var isDeadlockDetected = func(err error) bool {
 type sqlTemplate struct {
 }
 
-func (sqlTemplate) NewFindQueueAttributesDML(queueName string) (string, []interface{}) {
-	panic("implement me")
-}
-
 func (sqlTemplate) NewFindJobDML(table string, jobID string) (string, []interface{}) {
 	query := `
 SELECT * FROM %s WHERE job_id=?
@@ -129,7 +125,7 @@ DELETE FROM %s WHERE job_id = ?
 		[]interface{}{jobID}
 }
 
-func (sqlTemplate) NewFindQueueAttributeDML(queueName string) (stmt string, args []interface{}) {
+func (sqlTemplate) NewFindQueueAttributesDML(queueName string) (stmt string, args []interface{}) {
 	query := `
 SELECT * FROM %s_queue_attributes WHERE name=?
 `

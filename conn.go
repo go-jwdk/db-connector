@@ -611,8 +611,8 @@ type CreateQueueInput struct {
 	VisibilityTimeout      int64
 	MaximumMessageSize     int64
 	MessageRetentionPeriod int64
-	DeadLetterTarget       string
 	MaxReceiveCount        int64
+	DeadLetterTarget       string
 }
 
 func (in *CreateQueueInput) applyDefaultValues() *CreateQueueInput {
@@ -629,6 +629,10 @@ func (c *Connector) CreateQueue(ctx context.Context, input *CreateQueueInput) (*
 	input = input.applyDefaultValues()
 	queueRawName := queueRawName(input.Name)
 	repo := newRepository(c.db, c.sqlTmpl)
+	var deadLetterTarget *string
+	if input.DeadLetterTarget != "" {
+		deadLetterTarget = &input.DeadLetterTarget
+	}
 	_, err := c.retryer.Do(ctx, func(ctx context.Context) error {
 		err := repo.CreateQueueTable(ctx, queueRawName)
 		if err != nil {
@@ -639,10 +643,8 @@ func (c *Connector) CreateQueue(ctx context.Context, input *CreateQueueInput) (*
 			queueRawName,
 			input.VisibilityTimeout,
 			input.DelaySeconds,
-			input.MaximumMessageSize,
-			input.MessageRetentionPeriod,
 			input.MaxReceiveCount,
-			input.DeadLetterTarget)
+			deadLetterTarget)
 		if err != nil && !c.isUniqueViolation(err) {
 			return err
 		}
@@ -687,8 +689,6 @@ func (c *Connector) SetQueueAttributes(ctx context.Context, input *SetQueueAttri
 			out.Attributes.RawName,
 			input.VisibilityTimeout,
 			input.DelaySeconds,
-			input.MaximumMessageSize,
-			input.MessageRetentionPeriod,
 			input.MaxReceiveCount,
 			input.DeadLetterTarget,
 		)

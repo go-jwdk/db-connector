@@ -118,7 +118,7 @@ func (r *repository) UpdateJobVisibility(ctx context.Context, queueRawName, jobI
 }
 
 func (r *repository) GetQueueAttributes(ctx context.Context, queueName string) (*QueueAttributes, error) {
-	stmt, args := r.tmpl.NewFindQueueAttributeDML(queueName)
+	stmt, args := r.tmpl.NewFindQueueAttributesDML(queueName)
 	row := r.querier.QueryRowContext(ctx, stmt, args...)
 	var q QueueAttributes
 	err := row.Scan(
@@ -126,8 +126,6 @@ func (r *repository) GetQueueAttributes(ctx context.Context, queueName string) (
 		&q.RawName,
 		&q.DelaySeconds,
 		&q.VisibilityTimeout,
-		&q.MaximumMessageSize,
-		&q.MessageRetentionPeriod,
 		&q.DeadLetterTarget,
 		&q.MaxReceiveCount,
 	)
@@ -137,8 +135,8 @@ func (r *repository) GetQueueAttributes(ctx context.Context, queueName string) (
 	return &q, nil
 }
 
-func (r *repository) CreateQueueAttributes(ctx context.Context, queueName, queueRawName string, visibilityTimeout, delaySeconds, maximumMessageSize, messageRetentionPeriod, maxReceiveCount int64, deadLetterTarget string) error {
-	stmt, args := r.tmpl.NewAddQueueAttributeDML(queueName, queueRawName, delaySeconds, maximumMessageSize, messageRetentionPeriod, deadLetterTarget, maxReceiveCount, visibilityTimeout)
+func (r *repository) CreateQueueAttributes(ctx context.Context, queueName, queueRawName string, visibilityTimeout, delaySeconds, maxReceiveCount int64, deadLetterTarget *string) error {
+	stmt, args := r.tmpl.NewAddQueueAttributesDML(queueName, queueRawName, delaySeconds, maxReceiveCount, visibilityTimeout, deadLetterTarget)
 	_, err := r.querier.ExecContext(ctx, stmt, args...)
 	if err != nil {
 		return err
@@ -147,15 +145,13 @@ func (r *repository) CreateQueueAttributes(ctx context.Context, queueName, queue
 }
 
 func (r *repository) UpdateQueueAttributes(ctx context.Context, queueRawName string,
-	visibilityTimeout, delaySeconds, maximumMessageSize, messageRetentionPeriod, maxReceiveCount *int64, deadLetterTarget *string) (updated bool, err error) {
-	stmt, args := r.tmpl.NewUpdateQueueAttributeDML(
+	visibilityTimeout, delaySeconds, maxReceiveCount *int64, deadLetterTarget *string) (updated bool, err error) {
+	stmt, args := r.tmpl.NewUpdateQueueAttributesDML(
+		queueRawName,
 		visibilityTimeout,
 		delaySeconds,
-		maximumMessageSize,
-		messageRetentionPeriod,
-		deadLetterTarget,
 		maxReceiveCount,
-		queueRawName)
+		deadLetterTarget)
 	result, err := r.querier.ExecContext(ctx, stmt, args...)
 	if err != nil {
 		return false, err
