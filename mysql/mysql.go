@@ -1,17 +1,49 @@
 package mysql
 
 import (
-	"database/sql"
 	"fmt"
 	"strings"
 	"time"
 
-	"github.com/go-jwdk/db-connector"
+	conn "github.com/go-jwdk/db-connector"
 
 	"github.com/go-jwdk/jobworker"
 	"github.com/go-sql-driver/mysql"
-	"github.com/vvatanabe/goretryer/exponential"
 )
+
+const name = "mysql"
+
+var (
+	provider = Provider{}
+	template = sqlTemplate{}
+)
+
+func init() {
+	jobworker.Register(name, provider)
+}
+
+type Provider struct{}
+
+func (Provider) Open(cfgMap map[string]interface{}) (jobworker.Connector, error) {
+	cfg := parseConfig(cfgMap)
+	return Open(cfg)
+}
+
+func Open(cfg *Config) (*conn.Connector, error) {
+	cfg.ApplyDefaultValues()
+	return conn.Open(&conn.Config{
+		Name:                  name,
+		DSN:                   cfg.DSN,
+		MaxOpenConns:          cfg.MaxOpenConns,
+		MaxIdleConns:          cfg.MaxIdleConns,
+		ConnMaxLifetime:       cfg.ConnMaxLifetime,
+		NumMaxRetries:         *cfg.NumMaxRetries,
+		QueueAttributesExpire: *cfg.QueueAttributesExpire,
+		SQLTemplate:           template,
+		IsUniqueViolation:     isUniqueViolation,
+		IsDeadlockDetected:    isDeadlockDetected,
+	})
+}
 
 var isUniqueViolation = func(err error) bool {
 	if err == nil {
@@ -37,85 +69,24 @@ var isDeadlockDetected = func(err error) bool {
 	return false
 }
 
-var provider = Provider{}
-
-const connName = "mysql"
-
-func init() {
-	jobworker.Register(connName, provider)
+type sqlTemplate struct {
 }
 
-type Provider struct {
-}
-
-func (Provider) Open(attrs map[string]interface{}) (jobworker.Connector, error) {
-
-	values := db.ConnAttrsToValues(attrs)
-	values.ApplyDefaultValues()
-
-	var s Setting
-	s.DSN = values.DSN
-	s.MaxOpenConns = values.MaxOpenConns
-	s.MaxIdleConns = values.MaxIdleConns
-	s.ConnMaxLifetime = values.ConnMaxLifetime
-	s.NumMaxRetries = values.NumMaxRetries
-
-	return Open(&s)
-}
-
-type Setting struct {
-	DSN             string
-	MaxOpenConns    int
-	MaxIdleConns    int
-	ConnMaxLifetime *time.Duration
-	NumMaxRetries   *int
-}
-
-func Open(s *Setting) (*db.Connector, error) {
-
-	db, err := sql.Open(connName, s.DSN)
-	if err != nil {
-		return nil, err
-	}
-	db.SetMaxOpenConns(s.MaxOpenConns)
-	db.SetMaxIdleConns(s.MaxIdleConns)
-	if s.ConnMaxLifetime != nil {
-		db.SetConnMaxLifetime(*s.ConnMaxLifetime)
-	}
-
-	var er exponential.Retryer
-	if s.NumMaxRetries != nil {
-		er.NumMaxRetries = *s.NumMaxRetries
-	}
-
-	return &db.Connector{
-		ConnName:           connName,
-		DB:                 db,
-		SQLTemplate:        SQLTemplateForMySQL{},
-		IsUniqueViolation:  isUniqueViolation,
-		IsDeadlockDetected: isDeadlockDetected,
-		Retryer:            er,
-	}, nil
-}
-
-type SQLTemplateForMySQL struct {
-}
-
-func (SQLTemplateForMySQL) NewFindJobDML(table string, jobID string) (stmt string, args []interface{}) {
+func (sqlTemplate) NewFindJobDML(table string, jobID string) (stmt string, args []interface{}) {
 	query := `
 SELECT * FROM %s_%s WHERE job_id=?
 `
-	return fmt.Sprintf(query, db.TablePrefix, table), []interface{}{jobID}
+	return fmt.Sprintf(query, conn.TablePrefix, table), []interface{}{jobID}
 }
 
-func (SQLTemplateForMySQL) NewFindJobsDML(table string, limit int64) (stmt string, args []interface{}) {
+func (sqlTemplate) NewFindJobsDML(table string, limit int64) (stmt string, args []interface{}) {
 	query := `
 SELECT * FROM %s_%s WHERE invisible_until <= UNIX_TIMESTAMP(NOW()) ORDER BY sec_id DESC LIMIT %d
 `
-	return fmt.Sprintf(query, db.TablePrefix, table, limit), []interface{}{}
+	return fmt.Sprintf(query, conn.TablePrefix, table, limit), []interface{}{}
 }
 
-func (SQLTemplateForMySQL) NewHideJobDML(table string, jobID string, oldRetryCount, oldInvisibleUntil, invisibleTime int64) (stmt string, args []interface{}) {
+func (sqlTemplate) NewHideJobDML(table string, jobID string, oldRetryCount, oldInvisibleUntil, invisibleTime int64) (stmt string, args []interface{}) {
 	query := `
 UPDATE %s_%s
 SET retry_count=retry_count+1, invisible_until=UNIX_TIMESTAMP(NOW())+?
@@ -124,61 +95,60 @@ WHERE
   retry_count=? AND
   invisible_until=?
 `
-	return fmt.Sprintf(query, db.TablePrefix, table), []interface{}{invisibleTime, jobID, oldRetryCount, oldInvisibleUntil}
+	return fmt.Sprintf(query, conn.TablePrefix, table), []interface{}{invisibleTime, jobID, oldRetryCount, oldInvisibleUntil}
 }
 
-func (SQLTemplateForMySQL) NewEnqueueJobDML(table, jobID, content string, deduplicationID, groupID *string, delaySeconds int64) (string, []interface{}) {
+func (sqlTemplate) NewEnqueueJobDML(table, jobID, content string, deduplicationID, groupID *string, delaySeconds int64) (string, []interface{}) {
 	query := `
 INSERT INTO %s_%s (job_id, content, deduplication_id, group_id, retry_count, invisible_until, enqueue_at)
 VALUES (?, ?, ?, ?, 0, UNIX_TIMESTAMP(NOW()) + ?, UNIX_TIMESTAMP(NOW()) ))
 `
-	return fmt.Sprintf(query, db.TablePrefix, table), []interface{}{jobID, content, deduplicationID, groupID}
+	return fmt.Sprintf(query, conn.TablePrefix, table), []interface{}{jobID, content, deduplicationID, groupID}
 }
 
-func (SQLTemplateForMySQL) NewEnqueueJobWithTimeDML(table, jobID, content string, deduplicationID, groupID *string, enqueueAt int64) (string, []interface{}) {
+func (sqlTemplate) NewEnqueueJobWithTimeDML(table, jobID, content string, deduplicationID, groupID *string, enqueueAt int64) (string, []interface{}) {
 	query := `
 INSERT INTO %s_%s (job_id, content, deduplication_id, group_id, retry_count, invisible_until, enqueue_at) VALUES (?, ?, ?, ?, ?, 0, 0, ?)
 `
-	return fmt.Sprintf(query, db.TablePrefix, table), []interface{}{jobID, content, deduplicationID, groupID, enqueueAt}
+	return fmt.Sprintf(query, conn.TablePrefix, table), []interface{}{jobID, content, deduplicationID, groupID, enqueueAt}
 }
 
-func (SQLTemplateForMySQL) NewDeleteJobDML(table, jobID string) (stmt string, args []interface{}) {
+func (sqlTemplate) NewDeleteJobDML(table, jobID string) (stmt string, args []interface{}) {
 	query := `
 DELETE FROM %s_%s WHERE job_id = ?
 `
-	return fmt.Sprintf(query, db.TablePrefix, table),
+	return fmt.Sprintf(query, conn.TablePrefix, table),
 		[]interface{}{jobID}
 }
 
-func (SQLTemplateForMySQL) NewFindQueueAttributeDML(queue string) (stmt string, args []interface{}) {
+func (sqlTemplate) NewFindQueueAttributesDML(queueName string) (string, []interface{}) {
 	query := `
 SELECT * FROM %s_queue_setting WHERE name=?
 `
-	return fmt.Sprintf(query, db.TablePrefix),
-		[]interface{}{queue}
+	return fmt.Sprintf(query, conn.TablePrefix),
+		[]interface{}{queueName}
 }
 
-func (SQLTemplateForMySQL) NewUpdateJobByVisibilityTimeoutDML(table string, jobID string, visibilityTimeout int64) (stmt string, args []interface{}) {
+func (sqlTemplate) NewUpdateJobByVisibilityTimeoutDML(table string, jobID string, visibilityTimeout int64) (stmt string, args []interface{}) {
 	query := `
 UPDATE %s_%s SET visible_after = UNIX_TIMESTAMP(NOW()) + ? WHERE job_id = ?
 `
-	return fmt.Sprintf(query, db.TablePrefix, table), []interface{}{visibilityTimeout, jobID}
+	return fmt.Sprintf(query, conn.TablePrefix, table), []interface{}{visibilityTimeout, jobID}
 }
 
-func (SQLTemplateForMySQL) NewAddQueueAttributeDML(queue, table string, delaySeconds, maximumMessageSize, messageRetentionPeriod int64, deadLetterTarget string, maxReceiveCount, visibilityTimeout int64) (string, []interface{}) {
+func (sqlTemplate) NewAddQueueAttributesDML(queueName, queueRawName string, delaySeconds, maxReceiveCount, visibilityTimeout int64, deadLetterTarget *string) (stmt string, args []interface{}) {
 	query := `
-INSERT INTO %s_queue_setting (name, visibility_timeout, delay_seconds, maximum_message_size, message_retention_period, dead_letter_target, max_receive_count) VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO %s_queue_setting (name, visibility_timeout, delay_seconds, dead_letter_target, max_receive_count) VALUES (?, ?, ?, ?, ?)
 `
-	return fmt.Sprintf(query, db.TablePrefix), []interface{}{queue, visibilityTimeout, delaySeconds, maximumMessageSize, messageRetentionPeriod, deadLetterTarget, maxReceiveCount}
+	return fmt.Sprintf(query, conn.TablePrefix), []interface{}{queueName, visibilityTimeout, delaySeconds, deadLetterTarget, maxReceiveCount}
 }
 
-func (SQLTemplateForMySQL) NewUpdateQueueAttributeDML(visibilityTimeout, delaySeconds, maximumMessageSize, messageRetentionPeriod *int64, deadLetterTarget *string, maxReceiveCount *int64, queue string) (string, []interface{}) {
+func (sqlTemplate) NewUpdateQueueAttributesDML(queueRawName string, visibilityTimeout, delaySeconds, maxReceiveCount *int64, deadLetterTarget *string) (stmt string, args []interface{}) {
 	query := `
 UPDATE %s_queue_setting SET %s WHERE name = ?
 `
 	var (
 		sets []string
-		args []interface{}
 	)
 	if visibilityTimeout != nil {
 		sets = append(sets, "visibility_timeout=?")
@@ -188,14 +158,6 @@ UPDATE %s_queue_setting SET %s WHERE name = ?
 		sets = append(sets, "delay_seconds=?")
 		args = append(args, *delaySeconds)
 	}
-	if maximumMessageSize != nil {
-		sets = append(sets, "maximum_message_size=?")
-		args = append(args, *maximumMessageSize)
-	}
-	if messageRetentionPeriod != nil {
-		sets = append(sets, "message_retention_period=?")
-		args = append(args, *messageRetentionPeriod)
-	}
 	if deadLetterTarget != nil {
 		sets = append(sets, "dead_letter_target=?")
 		args = append(args, *deadLetterTarget)
@@ -204,11 +166,11 @@ UPDATE %s_queue_setting SET %s WHERE name = ?
 		sets = append(sets, "max_receive_count=?")
 		args = append(args, *maxReceiveCount)
 	}
-	args = append(args, queue)
-	return fmt.Sprintf(query, db.TablePrefix, strings.Join(sets, ",")), args
+	args = append(args, queueRawName)
+	return fmt.Sprintf(query, conn.TablePrefix, strings.Join(sets, ",")), args
 }
 
-func (SQLTemplateForMySQL) NewCreateQueueAttributesDDL() string {
+func (sqlTemplate) NewCreateQueueAttributesDDL() string {
 	query := `
 CREATE TABLE IF NOT EXISTS %s_queue_attributes (
         name                     VARCHAR(255) NOT NULL,
@@ -220,10 +182,10 @@ CREATE TABLE IF NOT EXISTS %s_queue_attributes (
 		max_receive_count        INTEGER UNSIGNED NOT NULL DEFAULT 0,
 		UNIQUE(name)
 );`
-	return fmt.Sprintf(query, db.TablePrefix)
+	return fmt.Sprintf(query, conn.TablePrefix)
 }
 
-func (SQLTemplateForMySQL) NewCreateQueueDDL(table string) string {
+func (sqlTemplate) NewCreateQueueDDL(table string) string {
 	query := `
 CREATE TABLE IF NOT EXISTS %s (
         sec_id            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -241,4 +203,63 @@ CREATE TABLE IF NOT EXISTS %s (
 CREATE INDEX IF NOT EXISTS %s_idx_invisible_until_retry_count ON %s (invisible_until, retry_count);
 `
 	return fmt.Sprintf(query, table, table, table)
+}
+
+const (
+	connAttributeNameDSN                   = "DSN"
+	connAttributeNameMaxOpenConns          = "MaxOpenConns"
+	connAttributeNameMaxIdleConns          = "MaxMaxIdleConns"
+	connAttributeNameConnMaxLifetime       = "ConnMaxLifetime"
+	connAttributeNameNumMaxRetries         = "NumMaxRetries"
+	connAttributeNameQueueAttributesExpire = "QueueAttributesExpire"
+
+	defaultNumMaxRetries         = 3
+	defaultQueueAttributesExpire = time.Minute
+)
+
+type Config struct {
+	DSN                   string
+	MaxOpenConns          int
+	MaxIdleConns          int
+	ConnMaxLifetime       *time.Duration
+	NumMaxRetries         *int
+	QueueAttributesExpire *time.Duration
+}
+
+func (v *Config) ApplyDefaultValues() {
+	if v.NumMaxRetries == nil {
+		i := defaultNumMaxRetries
+		v.NumMaxRetries = &i
+	}
+	if v.QueueAttributesExpire == nil {
+		i := defaultQueueAttributesExpire
+		v.QueueAttributesExpire = &i
+	}
+}
+
+func parseConfig(cfgMap map[string]interface{}) *Config {
+	var cfg Config
+	for k, v := range cfgMap {
+		switch k {
+		case connAttributeNameDSN:
+			s := v.(string)
+			cfg.DSN = s
+		case connAttributeNameMaxOpenConns:
+			s := v.(int)
+			cfg.MaxOpenConns = s
+		case connAttributeNameMaxIdleConns:
+			s := v.(int)
+			cfg.MaxIdleConns = s
+		case connAttributeNameConnMaxLifetime:
+			s := v.(time.Duration)
+			cfg.ConnMaxLifetime = &s
+		case connAttributeNameNumMaxRetries:
+			s := v.(int)
+			cfg.NumMaxRetries = &s
+		case connAttributeNameQueueAttributesExpire:
+			s := v.(time.Duration)
+			cfg.QueueAttributesExpire = &s
+		}
+	}
+	return &cfg
 }
