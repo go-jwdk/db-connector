@@ -1,4 +1,4 @@
-package dbconn
+package dbconnector
 
 import (
 	"context"
@@ -16,96 +16,57 @@ import (
 )
 
 const (
-	TablePrefix = "jwdk"
-
-	logPrefix = "[" + TablePrefix + "]"
-
-	connAttributeNameDSN                   = "DSN"
-	connAttributeNameMaxOpenConns          = "MaxOpenConns"
-	connAttributeNameMaxIdleConns          = "MaxMaxIdleConns"
-	connAttributeNameConnMaxLifetime       = "ConnMaxLifetime"
-	connAttributeNameNumMaxRetries         = "NumMaxRetries"
-	connAttributeNameQueueAttributesExpire = "QueueAttributesExpire"
-
-	defaultNumMaxRetries         = 3
-	defaultQueueAttributesExpire = time.Minute
-	defaultVisibilityTimeout     = int64(30)
+	TablePrefix              = "jwdk"
+	logPrefix                = "[" + TablePrefix + "]"
+	defaultVisibilityTimeout = int64(30)
 )
 
 type Config struct {
-	DSN                   string
-	MaxOpenConns          int
-	MaxIdleConns          int
-	ConnMaxLifetime       *time.Duration
-	NumMaxRetries         *int
-	QueueAttributesExpire *time.Duration
-}
+	Name string
 
-func (v *Config) ApplyDefaultValues() {
-	if v.NumMaxRetries == nil {
-		i := defaultNumMaxRetries
-		v.NumMaxRetries = &i
-	}
-	if v.QueueAttributesExpire == nil {
-		i := defaultQueueAttributesExpire
-		v.QueueAttributesExpire = &i
-	}
-}
+	DSN             string
+	MaxOpenConns    int
+	MaxIdleConns    int
+	ConnMaxLifetime *time.Duration
 
-func ParseConfig(cfgMap map[string]interface{}) *Config {
-	var cfg Config
-	for k, v := range cfgMap {
-		switch k {
-		case connAttributeNameDSN:
-			s := v.(string)
-			cfg.DSN = s
-		case connAttributeNameMaxOpenConns:
-			s := v.(int)
-			cfg.MaxOpenConns = s
-		case connAttributeNameMaxIdleConns:
-			s := v.(int)
-			cfg.MaxIdleConns = s
-		case connAttributeNameConnMaxLifetime:
-			s := v.(time.Duration)
-			cfg.ConnMaxLifetime = &s
-		case connAttributeNameNumMaxRetries:
-			s := v.(int)
-			cfg.NumMaxRetries = &s
-		case connAttributeNameQueueAttributesExpire:
-			s := v.(time.Duration)
-			cfg.QueueAttributesExpire = &s
-		}
-	}
-	return &cfg
-}
-
-type RawConfig struct {
-	Name                  string
-	DB                    *sql.DB
-	SQLTemplate           internal.SQLTemplate
-	IsUniqueViolation     func(err error) bool
-	IsDeadlockDetected    func(err error) bool
 	NumMaxRetries         int
 	QueueAttributesExpire time.Duration
+
+	SQLTemplate        internal.SQLTemplate
+	IsUniqueViolation  func(err error) bool
+	IsDeadlockDetected func(err error) bool
 }
 
-func Open(cfg *RawConfig) (*Connector, error) {
-	repo := newRepository(cfg.DB, cfg.SQLTemplate)
-	err := repo.CreateQueueAttributesTable(context.Background())
+func Open(cfg *Config) (*Connector, error) {
+
+	db, err := sql.Open(cfg.Name, cfg.DSN)
 	if err != nil {
 		return nil, err
 	}
-	er := exponential.Retryer{
+	db.SetMaxOpenConns(cfg.MaxOpenConns)
+	db.SetMaxIdleConns(cfg.MaxIdleConns)
+	if cfg.ConnMaxLifetime != nil {
+		db.SetConnMaxLifetime(*cfg.ConnMaxLifetime)
+	}
+
+	repo := newRepository(db, cfg.SQLTemplate)
+	err = repo.CreateQueueAttributesTable(context.Background())
+	if err != nil {
+		return nil, err
+	}
+
+	retryer := exponential.Retryer{
 		NumMaxRetries: cfg.NumMaxRetries,
 	}
+
 	return &Connector{
 		name:                  cfg.Name,
-		db:                    cfg.DB,
+		db:                    db,
 		sqlTmpl:               cfg.SQLTemplate,
 		isUniqueViolation:     cfg.IsUniqueViolation,
 		isDeadlockDetected:    cfg.IsDeadlockDetected,
 		queueAttributesExpire: cfg.QueueAttributesExpire,
-		retryer:               er,
+		retryer:               retryer,
 	}, nil
 }
 

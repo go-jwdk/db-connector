@@ -1,12 +1,12 @@
-package dbconn
+package dbconnector
 
 type QueueAttributes struct {
 	Name              string
 	RawName           string
 	DelaySeconds      int64
 	VisibilityTimeout int64
-	DeadLetterTarget  *string
 	MaxReceiveCount   int64 // If the value is zero, retry infinitely
+	DeadLetterTarget  *string
 }
 
 func (q QueueAttributes) HasDeadLetter() (string, bool) {

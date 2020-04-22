@@ -1,4 +1,4 @@
-package dbconn
+package dbconnector
 
 import (
 	"context"

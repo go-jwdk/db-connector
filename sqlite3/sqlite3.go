@@ -1,50 +1,47 @@
 package sqlite3
 
 import (
-	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 
-	dbconn "github.com/go-jwdk/db-connector"
+	conn "github.com/go-jwdk/db-connector"
 
 	"github.com/go-jwdk/jobworker"
 	"github.com/mattn/go-sqlite3"
 )
 
-var provider = Provider{}
+const name = "sqlite3"
 
-const connName = "sqlite3"
+var (
+	provider = Provider{}
+	template = sqlTemplate{}
+)
 
 func init() {
-	jobworker.Register(connName, provider)
+	jobworker.Register(name, provider)
 }
 
 type Provider struct{}
 
 func (Provider) Open(cfgMap map[string]interface{}) (jobworker.Connector, error) {
-	cfg := dbconn.ParseConfig(cfgMap)
-	cfg.ApplyDefaultValues()
+	cfg := parseConfig(cfgMap)
 	return Open(cfg)
 }
 
-func Open(s *dbconn.Config) (*dbconn.Connector, error) {
-	db, err := sql.Open(connName, s.DSN)
-	if err != nil {
-		return nil, err
-	}
-	db.SetMaxOpenConns(s.MaxOpenConns)
-	db.SetMaxIdleConns(s.MaxIdleConns)
-	if s.ConnMaxLifetime != nil {
-		db.SetConnMaxLifetime(*s.ConnMaxLifetime)
-	}
-	return dbconn.Open(&dbconn.RawConfig{
-		Name:                  connName,
-		DB:                    db,
-		SQLTemplate:           sqlTemplate{},
+func Open(cfg *Config) (*conn.Connector, error) {
+	cfg.ApplyDefaultValues()
+	return conn.Open(&conn.Config{
+		Name:                  name,
+		DSN:                   cfg.DSN,
+		MaxOpenConns:          cfg.MaxOpenConns,
+		MaxIdleConns:          cfg.MaxIdleConns,
+		ConnMaxLifetime:       cfg.ConnMaxLifetime,
+		NumMaxRetries:         *cfg.NumMaxRetries,
+		QueueAttributesExpire: *cfg.QueueAttributesExpire,
+		SQLTemplate:           template,
 		IsUniqueViolation:     isUniqueViolation,
 		IsDeadlockDetected:    isDeadlockDetected,
-		NumMaxRetries:         *s.NumMaxRetries,
-		QueueAttributesExpire: *s.QueueAttributesExpire,
 	})
 }
 
@@ -92,10 +89,7 @@ func (sqlTemplate) NewHideJobDML(table string, jobID string, oldRetryCount, oldI
 	query := `
 UPDATE %s
 SET retry_count=retry_count+1, invisible_until=strftime('%%s', 'now')+?
-WHERE
-  job_id=? AND
-  retry_count=? AND
-  invisible_until=?
+WHERE job_id=? AND retry_count=? AND invisible_until=?
 `
 	return fmt.Sprintf(query, table), []interface{}{invisibleTime, jobID, oldRetryCount, oldInvisibleUntil}
 }
@@ -129,7 +123,7 @@ func (sqlTemplate) NewFindQueueAttributesDML(queueName string) (stmt string, arg
 	query := `
 SELECT * FROM %s_queue_attributes WHERE name=?
 `
-	return fmt.Sprintf(query, dbconn.TablePrefix), []interface{}{queueName}
+	return fmt.Sprintf(query, conn.TablePrefix), []interface{}{queueName}
 }
 
 func (sqlTemplate) NewUpdateJobByVisibilityTimeoutDML(queueRawName string, jobID string, visibilityTimeout int64) (stmt string, args []interface{}) {
@@ -144,7 +138,7 @@ func (sqlTemplate) NewAddQueueAttributesDML(queueName, queueRawName string, dela
 INSERT INTO %s_queue_attributes (name, raw_name, visibility_timeout, delay_seconds, dead_letter_target, max_receive_count)
 VALUES (?, ?, ?, ?, ?, ?)
 `
-	return fmt.Sprintf(query, dbconn.TablePrefix), []interface{}{queueName, queueRawName, visibilityTimeout, delaySeconds, deadLetterTarget, maxReceiveCount}
+	return fmt.Sprintf(query, conn.TablePrefix), []interface{}{queueName, queueRawName, visibilityTimeout, delaySeconds, deadLetterTarget, maxReceiveCount}
 }
 
 func (sqlTemplate) NewUpdateQueueAttributesDML(queueRawName string, visibilityTimeout, delaySeconds, maxReceiveCount *int64, deadLetterTarget *string) (stmt string, args []interface{}) {
@@ -169,7 +163,7 @@ UPDATE %s_queue_attributes SET %s WHERE raw_name = ?
 		args = append(args, *maxReceiveCount)
 	}
 	args = append(args, queueRawName)
-	return fmt.Sprintf(query, dbconn.TablePrefix, strings.Join(sets, ",")), args
+	return fmt.Sprintf(query, conn.TablePrefix, strings.Join(sets, ",")), args
 }
 
 func (sqlTemplate) NewCreateQueueAttributesDDL() string {
@@ -179,12 +173,12 @@ CREATE TABLE IF NOT EXISTS %s_queue_attributes (
         raw_name                 VARCHAR(255) NOT NULL,
 		visibility_timeout       INTEGER UNSIGNED NOT NULL DEFAULT 30,
 		delay_seconds            INTEGER UNSIGNED NOT NULL,
-		dead_letter_target       VARCHAR(255),
 		max_receive_count        INTEGER UNSIGNED NOT NULL,
+		dead_letter_target       VARCHAR(255),
 		UNIQUE(name)
 		UNIQUE(raw_name)
 );`
-	return fmt.Sprintf(query, dbconn.TablePrefix)
+	return fmt.Sprintf(query, conn.TablePrefix)
 }
 
 func (sqlTemplate) NewCreateQueueDDL(table string) string {
@@ -203,4 +197,63 @@ CREATE TABLE IF NOT EXISTS %s (
 CREATE INDEX IF NOT EXISTS %s_idx_invisible_until_retry_count ON %s (invisible_until, retry_count);
 `
 	return fmt.Sprintf(query, table, table, table)
+}
+
+const (
+	connAttributeNameDSN                   = "DSN"
+	connAttributeNameMaxOpenConns          = "MaxOpenConns"
+	connAttributeNameMaxIdleConns          = "MaxMaxIdleConns"
+	connAttributeNameConnMaxLifetime       = "ConnMaxLifetime"
+	connAttributeNameNumMaxRetries         = "NumMaxRetries"
+	connAttributeNameQueueAttributesExpire = "QueueAttributesExpire"
+
+	defaultNumMaxRetries         = 3
+	defaultQueueAttributesExpire = time.Minute
+)
+
+type Config struct {
+	DSN                   string
+	MaxOpenConns          int
+	MaxIdleConns          int
+	ConnMaxLifetime       *time.Duration
+	NumMaxRetries         *int
+	QueueAttributesExpire *time.Duration
+}
+
+func (v *Config) ApplyDefaultValues() {
+	if v.NumMaxRetries == nil {
+		i := defaultNumMaxRetries
+		v.NumMaxRetries = &i
+	}
+	if v.QueueAttributesExpire == nil {
+		i := defaultQueueAttributesExpire
+		v.QueueAttributesExpire = &i
+	}
+}
+
+func parseConfig(cfgMap map[string]interface{}) *Config {
+	var cfg Config
+	for k, v := range cfgMap {
+		switch k {
+		case connAttributeNameDSN:
+			s := v.(string)
+			cfg.DSN = s
+		case connAttributeNameMaxOpenConns:
+			s := v.(int)
+			cfg.MaxOpenConns = s
+		case connAttributeNameMaxIdleConns:
+			s := v.(int)
+			cfg.MaxIdleConns = s
+		case connAttributeNameConnMaxLifetime:
+			s := v.(time.Duration)
+			cfg.ConnMaxLifetime = &s
+		case connAttributeNameNumMaxRetries:
+			s := v.(int)
+			cfg.NumMaxRetries = &s
+		case connAttributeNameQueueAttributesExpire:
+			s := v.(time.Duration)
+			cfg.QueueAttributesExpire = &s
+		}
+	}
+	return &cfg
 }
