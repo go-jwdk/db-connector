@@ -3,10 +3,9 @@ package mysql
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	conn "github.com/go-jwdk/db-connector"
-
+	"github.com/go-jwdk/db-connector/config"
 	"github.com/go-jwdk/jobworker"
 	"github.com/go-sql-driver/mysql"
 )
@@ -25,11 +24,11 @@ func init() {
 type Provider struct{}
 
 func (Provider) Open(cfgMap map[string]interface{}) (jobworker.Connector, error) {
-	cfg := parseConfig(cfgMap)
+	cfg := config.ParseConfig(cfgMap)
 	return Open(cfg)
 }
 
-func Open(cfg *Config) (*conn.Connector, error) {
+func Open(cfg *config.Config) (*conn.Connector, error) {
 	cfg.ApplyDefaultValues()
 	return conn.Open(&conn.Config{
 		Name:                  name,
@@ -203,63 +202,4 @@ CREATE TABLE IF NOT EXISTS %s (
 CREATE INDEX IF NOT EXISTS %s_idx_invisible_until_retry_count ON %s (invisible_until, retry_count);
 `
 	return fmt.Sprintf(query, table, table, table)
-}
-
-const (
-	connAttributeNameDSN                   = "DSN"
-	connAttributeNameMaxOpenConns          = "MaxOpenConns"
-	connAttributeNameMaxIdleConns          = "MaxMaxIdleConns"
-	connAttributeNameConnMaxLifetime       = "ConnMaxLifetime"
-	connAttributeNameNumMaxRetries         = "NumMaxRetries"
-	connAttributeNameQueueAttributesExpire = "QueueAttributesExpire"
-
-	defaultNumMaxRetries         = 3
-	defaultQueueAttributesExpire = time.Minute
-)
-
-type Config struct {
-	DSN                   string
-	MaxOpenConns          int
-	MaxIdleConns          int
-	ConnMaxLifetime       *time.Duration
-	NumMaxRetries         *int
-	QueueAttributesExpire *time.Duration
-}
-
-func (v *Config) ApplyDefaultValues() {
-	if v.NumMaxRetries == nil {
-		i := defaultNumMaxRetries
-		v.NumMaxRetries = &i
-	}
-	if v.QueueAttributesExpire == nil {
-		i := defaultQueueAttributesExpire
-		v.QueueAttributesExpire = &i
-	}
-}
-
-func parseConfig(cfgMap map[string]interface{}) *Config {
-	var cfg Config
-	for k, v := range cfgMap {
-		switch k {
-		case connAttributeNameDSN:
-			s := v.(string)
-			cfg.DSN = s
-		case connAttributeNameMaxOpenConns:
-			s := v.(int)
-			cfg.MaxOpenConns = s
-		case connAttributeNameMaxIdleConns:
-			s := v.(int)
-			cfg.MaxIdleConns = s
-		case connAttributeNameConnMaxLifetime:
-			s := v.(time.Duration)
-			cfg.ConnMaxLifetime = &s
-		case connAttributeNameNumMaxRetries:
-			s := v.(int)
-			cfg.NumMaxRetries = &s
-		case connAttributeNameQueueAttributesExpire:
-			s := v.(time.Duration)
-			cfg.QueueAttributesExpire = &s
-		}
-	}
-	return &cfg
 }
