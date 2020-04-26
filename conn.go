@@ -22,13 +22,8 @@ const (
 )
 
 type Config struct {
-	Name string
-
-	DSN             string
-	MaxOpenConns    int
-	MaxIdleConns    int
-	ConnMaxLifetime *time.Duration
-
+	Name                  string
+	DB                    *sql.DB
 	NumMaxRetries         int
 	QueueAttributesExpire time.Duration
 
@@ -39,18 +34,8 @@ type Config struct {
 
 func Open(cfg *Config) (*Connector, error) {
 
-	db, err := sql.Open(cfg.Name, cfg.DSN)
-	if err != nil {
-		return nil, err
-	}
-	db.SetMaxOpenConns(cfg.MaxOpenConns)
-	db.SetMaxIdleConns(cfg.MaxIdleConns)
-	if cfg.ConnMaxLifetime != nil {
-		db.SetConnMaxLifetime(*cfg.ConnMaxLifetime)
-	}
-
-	repo := newRepository(db, cfg.SQLTemplate)
-	err = repo.CreateQueueAttributesTable(context.Background())
+	repo := newRepository(cfg.DB, cfg.SQLTemplate)
+	err := repo.CreateQueueAttributesTable(context.Background())
 	if err != nil {
 		return nil, err
 	}
@@ -61,7 +46,7 @@ func Open(cfg *Config) (*Connector, error) {
 
 	return &Connector{
 		name:                  cfg.Name,
-		db:                    db,
+		db:                    cfg.DB,
 		sqlTmpl:               cfg.SQLTemplate,
 		isUniqueViolation:     cfg.IsUniqueViolation,
 		isDeadlockDetected:    cfg.IsDeadlockDetected,

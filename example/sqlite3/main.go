@@ -6,6 +6,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/go-jwdk/db-connector/config"
+
 	uuid "github.com/satori/go.uuid"
 
 	dbconn "github.com/go-jwdk/db-connector"
@@ -19,7 +21,7 @@ func main() {
 	connMaxLifetime := time.Minute
 	numMaxRetries := 3
 
-	s := &sqlite3.Setting{
+	s := &config.Config{
 		DSN:             dsn,
 		MaxOpenConns:    3,
 		MaxIdleConns:    3,
@@ -55,30 +57,30 @@ func main() {
 
 			time.Sleep(3 * time.Second)
 		}
-		//for {
-		//	_, err := conn.EnqueueBatch(context.Background(), &jobworker.EnqueueBatchInput{
-		//		Queue: "test",
-		//		Entries: []*jobworker.EnqueueBatchEntry{
-		//			{
-		//				ID:      "foo",
-		//				Content: "foo-content",
-		//			},
-		//			{
-		//				ID:      "bar",
-		//				Content: "bar-content",
-		//			},
-		//			{
-		//				ID:      "baz",
-		//				Content: "baz-content",
-		//			},
-		//		},
-		//	})
-		//	if err != nil {
-		//		fmt.Println("could not enqueue a job", err)
-		//	}
-		//
-		//	time.Sleep(3 * time.Second)
-		//}
+		for {
+			_, err := conn.EnqueueBatch(context.Background(), &jobworker.EnqueueBatchInput{
+				Queue: "test",
+				Entries: []*jobworker.EnqueueBatchEntry{
+					{
+						ID:      "foo",
+						Content: "foo-content",
+					},
+					{
+						ID:      "bar",
+						Content: "bar-content",
+					},
+					{
+						ID:      "baz",
+						Content: "baz-content",
+					},
+				},
+			})
+			if err != nil {
+				fmt.Println("could not enqueue a job", err)
+			}
+
+			time.Sleep(3 * time.Second)
+		}
 	}()
 
 	done := make(chan struct{})

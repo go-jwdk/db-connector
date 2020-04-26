@@ -1,6 +1,7 @@
 package sqlite3
 
 import (
+	"database/sql"
 	"fmt"
 	"strings"
 
@@ -30,12 +31,20 @@ func (Provider) Open(cfgMap map[string]interface{}) (jobworker.Connector, error)
 
 func Open(cfg *config.Config) (*conn.Connector, error) {
 	cfg.ApplyDefaultValues()
+
+	db, err := sql.Open(name, cfg.DSN)
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxOpenConns(cfg.MaxOpenConns)
+	db.SetMaxIdleConns(cfg.MaxIdleConns)
+	if cfg.ConnMaxLifetime != nil {
+		db.SetConnMaxLifetime(*cfg.ConnMaxLifetime)
+	}
+
 	return conn.Open(&conn.Config{
 		Name:                  name,
-		DSN:                   cfg.DSN,
-		MaxOpenConns:          cfg.MaxOpenConns,
-		MaxIdleConns:          cfg.MaxIdleConns,
-		ConnMaxLifetime:       cfg.ConnMaxLifetime,
+		DB:                    db,
 		NumMaxRetries:         *cfg.NumMaxRetries,
 		QueueAttributesExpire: *cfg.QueueAttributesExpire,
 		SQLTemplate:           template,
