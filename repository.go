@@ -124,10 +124,10 @@ func (r *repository) GetQueueAttributes(ctx context.Context, queueName string) (
 	err := row.Scan(
 		&q.Name,
 		&q.RawName,
-		&q.DelaySeconds,
 		&q.VisibilityTimeout,
-		&q.DeadLetterTarget,
+		&q.DelaySeconds,
 		&q.MaxReceiveCount,
+		&q.DeadLetterTarget,
 	)
 	if err != nil {
 		return nil, err
