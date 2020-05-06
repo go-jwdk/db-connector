@@ -1,4 +1,4 @@
-package internal
+package dbconnector
 
 type SQLTemplate interface {
 	NewFindJobDML(queueRawName string, jobID string) (string, []interface{})
@@ -8,11 +8,9 @@ type SQLTemplate interface {
 	NewEnqueueJobWithTimeDML(queueRawName, jobID, content string, deduplicationID, groupID *string, enqueueAt int64) (string, []interface{})
 	NewDeleteJobDML(queueRawName, jobID string) (string, []interface{})
 	NewUpdateJobByVisibilityTimeoutDML(queueRawName string, jobID string, visibilityTimeout int64) (string, []interface{})
-
-	NewAddQueueAttributesDML(queueName, queueRawName string, delaySeconds, maxReceiveCount, visibilityTimeout int64, deadLetterTarget *string) (stmt string, args []interface{})
-	NewUpdateQueueAttributesDML(queueRawName string, visibilityTimeout, delaySeconds, maxReceiveCount *int64, deadLetterTarget *string) (stmt string, args []interface{})
+	NewAddQueueAttributesDML(queueName, queueRawName string, delaySeconds, maxReceiveCount, visibilityTimeout int64, deadLetterTarget *string) (string, []interface{})
+	NewUpdateQueueAttributesDML(queueRawName string, visibilityTimeout, delaySeconds, maxReceiveCount *int64, deadLetterTarget *string) (string, []interface{})
 	NewFindQueueAttributesDML(queueName string) (string, []interface{})
-
 	NewCreateQueueAttributesDDL() string
 	NewCreateQueueDDL(queueRawName string) string
 }
