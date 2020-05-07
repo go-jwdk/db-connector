@@ -373,39 +373,101 @@ func Test_subscription_writeChan(t *testing.T) {
 	}
 }
 
-//func Test_subscription_readChan(t *testing.T) {
-//	type fields struct {
-//		queueAttributes   *QueueAttributes
-//		conn              jobworker.Connector
-//		pollingInterval   time.Duration
-//		visibilityTimeout int64
-//		maxNumberOfJobs   int64
-//		grabber           grabber
-//		queue             chan *jobworker.Job
-//		state             int32
-//	}
-//	type args struct {
-//		ch chan *jobworker.Job
-//	}
-//	tests := []struct {
-//		name   string
-//		fields fields
-//		args   args
-//	}{
-//		// TODO: Add test cases.
-//	}
-//	for _, tt := range tests {
-//		t.Run(tt.name, func(t *testing.T) {
-//			s := &subscription{
-//				queueAttributes:   tt.fields.queueAttributes,
-//				conn:              tt.fields.conn,
-//				pollingInterval:   tt.fields.pollingInterval,
-//				visibilityTimeout: tt.fields.visibilityTimeout,
-//				maxNumberOfJobs:   tt.fields.maxNumberOfJobs,
-//				grabber:           tt.fields.grabber,
-//				queue:             tt.fields.queue,
-//				state:             tt.fields.state,
-//			}
-//		})
-//	}
-//}
+func Test_subscription_readChan(t *testing.T) {
+	type fields struct {
+		queueAttributes *QueueAttributes
+		queue           chan *jobworker.Job
+		state           int32
+	}
+	type args struct {
+		ch chan *jobworker.Job
+	}
+	tests := []struct {
+		name           string
+		fields         fields
+		args           args
+		wantJobSize    int
+		wantClosedChan bool
+	}{
+		{
+			name: "normal case",
+			fields: fields{
+				queueAttributes: &QueueAttributes{},
+				queue:           make(chan *jobworker.Job),
+				state:           subStateActive,
+			},
+			args: args{
+				ch: make(chan *jobworker.Job, 10),
+			},
+			wantJobSize:    1,
+			wantClosedChan: false,
+		},
+		{
+			name: "closed job chan and state is active",
+			fields: fields{
+				queueAttributes: &QueueAttributes{},
+				queue:           make(chan *jobworker.Job),
+				state:           subStateActive,
+			},
+			args: args{
+				ch: make(chan *jobworker.Job, 10),
+			},
+			wantJobSize:    1,
+			wantClosedChan: true,
+		},
+		{
+			name: "closed job chan and state is closing",
+			fields: fields{
+				queueAttributes: &QueueAttributes{},
+				queue:           make(chan *jobworker.Job),
+				state:           subStateClosing,
+			},
+			args: args{
+				ch: make(chan *jobworker.Job, 10),
+			},
+			wantJobSize:    1,
+			wantClosedChan: true,
+		},
+		{
+			name: "closed job chan and state is closed",
+			fields: fields{
+				queueAttributes: &QueueAttributes{},
+				queue: func() chan *jobworker.Job {
+					ch := make(chan *jobworker.Job)
+					close(ch)
+					return ch
+				}(),
+				state: subStateClosed,
+			},
+			args: args{
+				ch: make(chan *jobworker.Job, 10),
+			},
+			wantJobSize:    1,
+			wantClosedChan: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &subscription{
+				queueAttributes: tt.fields.queueAttributes,
+				queue:           tt.fields.queue,
+				state:           tt.fields.state,
+			}
+			go s.readChan(tt.args.ch)
+			if tt.wantClosedChan {
+				close(tt.args.ch)
+				if _, ok := <-s.queue; ok {
+					t.Errorf("subscription.readMessageChan() result = %v, wantClosedChan %v", ok, tt.wantClosedChan)
+				}
+				return
+			}
+
+			for i := 0; i < tt.wantJobSize; i++ {
+				tt.args.ch <- &jobworker.Job{}
+			}
+			if len(tt.args.ch) != tt.wantJobSize {
+				t.Errorf("subscription.readMessageChan() size = %v, wantSize %v", len(tt.args.ch), tt.wantJobSize)
+			}
+		})
+	}
+}
