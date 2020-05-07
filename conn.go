@@ -86,7 +86,10 @@ func (c *Connector) Subscribe(ctx context.Context, input *jobworker.SubscribeInp
 	if err != nil {
 		return nil, fmt.Errorf("could not get queue attributes: %w", err)
 	}
-	sub = newSubscription(out.Attributes, c, c, input.Metadata)
+	sub = newSubscription(out.Attributes, c, c)
+	if len(input.Metadata) > 0 {
+		sub.SetMetadata(input.Metadata)
+	}
 	go sub.Start()
 	return &jobworker.SubscribeOutput{
 		Subscription: sub,
@@ -561,13 +564,11 @@ func (c *Connector) redriveJob(ctx context.Context, from, to *QueueAttributes, j
 }
 
 type CreateQueueInput struct {
-	Name                   string
-	DelaySeconds           int64
-	VisibilityTimeout      int64
-	MaximumMessageSize     int64
-	MessageRetentionPeriod int64
-	MaxReceiveCount        int64
-	DeadLetterTarget       string
+	Name              string
+	DelaySeconds      int64
+	VisibilityTimeout int64
+	MaxReceiveCount   int64
+	DeadLetterTarget  string
 }
 
 func (in *CreateQueueInput) applyDefaultValues() *CreateQueueInput {

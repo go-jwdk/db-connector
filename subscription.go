@@ -1,3 +1,5 @@
+//go:generate smock --type=grabber
+
 package dbconnector
 
 import (
@@ -23,42 +25,17 @@ const (
 	defaultMaxNumberOfJobs = int64(1)
 )
 
-func newSubscription(queueAttributes *QueueAttributes,
+func newSubscription(attributes *QueueAttributes,
 	conn jobworker.Connector,
-	grabber grabber,
-	meta map[string]string) *subscription {
-
-	pollingInterval := defaultPollingInterval
-	if v := meta[subMetadataKeyPollingInterval]; v != "" {
-		i, err := strconv.ParseInt(v, 10, 64)
-		if err == nil {
-			pollingInterval = time.Duration(i) * time.Second
-		}
-	}
-
-	visibilityTimeout := queueAttributes.VisibilityTimeout
-	if v := meta[subMetadataKeyVisibilityTimeout]; v != "" {
-		i, err := strconv.ParseInt(v, 10, 64)
-		if err == nil {
-			visibilityTimeout = i
-		}
-	}
-
-	maxNumberOfMessages := defaultMaxNumberOfJobs
-	if v := meta[subMetadataKeyMaxNumberOfJobs]; v != "" {
-		i, err := strconv.ParseInt(v, 10, 64)
-		if err == nil {
-			maxNumberOfMessages = i
-		}
-	}
+	grabber grabber) *subscription {
 
 	return &subscription{
-		pollingInterval:   pollingInterval,
-		queueAttributes:   queueAttributes,
+		pollingInterval:   defaultPollingInterval,
+		queueAttributes:   attributes,
 		conn:              conn,
 		grabber:           grabber,
-		visibilityTimeout: visibilityTimeout,
-		maxNumberOfJobs:   maxNumberOfMessages,
+		visibilityTimeout: attributes.VisibilityTimeout,
+		maxNumberOfJobs:   defaultMaxNumberOfJobs,
 		queue:             make(chan *jobworker.Job),
 	}
 }
@@ -74,6 +51,27 @@ type subscription struct {
 	grabber grabber
 	queue   chan *jobworker.Job
 	state   int32
+}
+
+func (s *subscription) SetMetadata(meta map[string]string) {
+	if v := meta[subMetadataKeyPollingInterval]; v != "" {
+		i, err := strconv.ParseInt(v, 10, 64)
+		if err == nil {
+			s.pollingInterval = time.Duration(i) * time.Second
+		}
+	}
+	if v := meta[subMetadataKeyVisibilityTimeout]; v != "" {
+		i, err := strconv.ParseInt(v, 10, 64)
+		if err == nil {
+			s.visibilityTimeout = i
+		}
+	}
+	if v := meta[subMetadataKeyMaxNumberOfJobs]; v != "" {
+		i, err := strconv.ParseInt(v, 10, 64)
+		if err == nil {
+			s.maxNumberOfJobs = i
+		}
+	}
 }
 
 func (s *subscription) Active() bool {
@@ -112,8 +110,8 @@ func (s *subscription) writeChan(ch chan *jobworker.Job) {
 			VisibilityTimeout: s.visibilityTimeout,
 		})
 		if err != nil {
-			close(ch)
-			return
+			time.Sleep(s.pollingInterval)
+			continue
 		}
 		if len(grabbed.Jobs) == 0 {
 			time.Sleep(s.pollingInterval)
