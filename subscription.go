@@ -1,5 +1,3 @@
-//go:generate smock --type=grabber
-
 package dbconnector
 
 import (
