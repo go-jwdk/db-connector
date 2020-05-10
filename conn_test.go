@@ -212,3 +212,96 @@ func TestConnector_Enqueue(t *testing.T) {
 		})
 	}
 }
+
+func TestConnector_EnqueueBatch(t *testing.T) {
+
+	repo := &repositoryMock{
+		getQueueAttributesFunc: func(ctx context.Context, queueName string) (*QueueAttributes, error) {
+			if queueName == "" {
+				return nil, errors.New("queue mame is empty")
+			}
+			return &QueueAttributes{
+				Name: "foo",
+			}, nil
+		},
+		enqueueJobFunc: func(ctx context.Context, queue, jobID, content string, deduplicationID, groupID *string, delaySeconds int64) error {
+			if content == "" {
+				return errors.New("content is empty")
+			}
+			return nil
+		},
+	}
+
+	type fields struct {
+		isUniqueViolation  func(err error) bool
+		isDeadlockDetected func(err error) bool
+		retryer            exponential.Retryer
+		repo               repository
+	}
+	type args struct {
+		ctx   context.Context
+		input *jobworker.EnqueueBatchInput
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		args    args
+		want    *jobworker.EnqueueBatchOutput
+		wantErr bool
+	}{
+		{
+			name: "normal case",
+			fields: fields{
+				isUniqueViolation:  defaultIsisUniqueViolation,
+				isDeadlockDetected: defaultIsDeadlockDetected,
+				retryer:            exponential.Retryer{},
+				repo:               repo,
+			},
+			args: args{
+				ctx: context.Background(),
+				input: &jobworker.EnqueueBatchInput{
+					Queue: "foo",
+					Entries: []*jobworker.EnqueueBatchEntry{
+						{
+							ID:      "uniq-1",
+							Content: "hello",
+						},
+						{
+							ID:      "uniq-2",
+							Content: "hello",
+						},
+						{
+							ID:      "uniq-3",
+							Content: "hello",
+						},
+					},
+				},
+			},
+			want: &jobworker.EnqueueBatchOutput{
+				Failed: nil,
+				Successful: []string{
+					"uniq-1", "uniq-2", "uniq-3",
+				},
+			},
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &Connector{
+				isUniqueViolation:  tt.fields.isUniqueViolation,
+				isDeadlockDetected: tt.fields.isDeadlockDetected,
+				retryer:            tt.fields.retryer,
+				repo:               tt.fields.repo,
+			}
+			got, err := c.EnqueueBatch(tt.args.ctx, tt.args.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("EnqueueBatch() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("EnqueueBatch() got = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

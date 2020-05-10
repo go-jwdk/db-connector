@@ -1,5 +1,3 @@
-// +build !mock
-
 package dbconnector
 
 import (
