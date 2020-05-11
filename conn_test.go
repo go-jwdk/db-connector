@@ -2,9 +2,11 @@ package dbconnector
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/go-jwdk/db-connector/internal"
 
@@ -623,6 +625,138 @@ func TestConnector_FailJob(t *testing.T) {
 			}
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("FailJob() got = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestConnector_GetQueueAttributes(t *testing.T) {
+
+	repo := &repositoryMock{
+		getQueueAttributesFunc: func(ctx context.Context, queueName string) (*QueueAttributes, error) {
+			if queueName == "" {
+				return nil, errors.New("queue mame is empty")
+			}
+			if queueName == "bar" {
+				return nil, sql.ErrNoRows
+			}
+			return &QueueAttributes{
+				Name:    "foo",
+				RawName: "raw_foo",
+			}, nil
+		},
+	}
+
+	type fields struct {
+		queueAttributesExpire time.Duration
+		retryer               exponential.Retryer
+		repo                  repository
+	}
+	type args struct {
+		ctx   context.Context
+		input *GetQueueAttributesInput
+	}
+	tests := []struct {
+		name      string
+		fields    fields
+		args      args
+		want      *GetQueueAttributesOutput
+		wantErr   bool
+		withCache bool
+	}{
+		{
+			name: "normal case",
+			fields: fields{
+				queueAttributesExpire: 0,
+				retryer:               exponential.Retryer{},
+				repo:                  repo,
+			},
+			args: args{
+				ctx: context.Background(),
+				input: &GetQueueAttributesInput{
+					QueueName: "foo",
+				},
+			},
+			want: &GetQueueAttributesOutput{
+				Attributes: &QueueAttributes{
+					Name:    "foo",
+					RawName: "raw_foo",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "normal case with cache",
+			fields: fields{
+				queueAttributesExpire: 0,
+				retryer:               exponential.Retryer{},
+				repo:                  repo,
+			},
+			args: args{
+				ctx: context.Background(),
+				input: &GetQueueAttributesInput{
+					QueueName: "foo",
+				},
+			},
+			want: &GetQueueAttributesOutput{
+				Attributes: &QueueAttributes{
+					Name:    "foo",
+					RawName: "raw_foo",
+				},
+			},
+			wantErr:   false,
+			withCache: true,
+		},
+		{
+			name: "error case",
+			fields: fields{
+				queueAttributesExpire: 0,
+				retryer:               exponential.Retryer{},
+				repo:                  repo,
+			},
+			args: args{
+				ctx: context.Background(),
+				input: &GetQueueAttributesInput{
+					QueueName: "",
+				},
+			},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "error case",
+			fields: fields{
+				queueAttributesExpire: 0,
+				retryer:               exponential.Retryer{},
+				repo:                  repo,
+			},
+			args: args{
+				ctx: context.Background(),
+				input: &GetQueueAttributesInput{
+					QueueName: "bar",
+				},
+			},
+			want:    nil,
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &Connector{
+				queueAttributesExpire: tt.fields.queueAttributesExpire,
+				retryer:               tt.fields.retryer,
+				repo:                  tt.fields.repo,
+			}
+			if tt.withCache {
+				c.name2Queue.Store(tt.args.input.QueueName, tt.want.Attributes)
+			}
+			got, err := c.GetQueueAttributes(tt.args.ctx, tt.args.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("GetQueueAttributes() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("GetQueueAttributes() got = %v, want %v", got, tt.want)
 			}
 		})
 	}
