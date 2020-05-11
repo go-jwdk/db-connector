@@ -285,6 +285,83 @@ func TestConnector_EnqueueBatch(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		{
+			name: "error case",
+			fields: fields{
+				isUniqueViolation:  defaultIsisUniqueViolation,
+				isDeadlockDetected: defaultIsDeadlockDetected,
+				retryer:            exponential.Retryer{},
+				repo:               repo,
+			},
+			args: args{
+				ctx: context.Background(),
+				input: &jobworker.EnqueueBatchInput{
+					Queue: "",
+					Entries: []*jobworker.EnqueueBatchEntry{
+						{
+							ID:      "uniq-1",
+							Content: "hello",
+						},
+					},
+				},
+			},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "error case",
+			fields: fields{
+				isUniqueViolation:  defaultIsisUniqueViolation,
+				isDeadlockDetected: defaultIsDeadlockDetected,
+				retryer:            exponential.Retryer{},
+				repo:               repo,
+			},
+			args: args{
+				ctx: context.Background(),
+				input: &jobworker.EnqueueBatchInput{
+					Queue: "foo",
+					Entries: []*jobworker.EnqueueBatchEntry{
+						{
+							ID:      "uniq-1",
+							Content: "hello",
+						},
+						{
+							ID:      "uniq-1",
+							Content: "hello",
+						},
+					},
+				},
+			},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "error case",
+			fields: fields{
+				isUniqueViolation:  defaultIsisUniqueViolation,
+				isDeadlockDetected: defaultIsDeadlockDetected,
+				retryer:            exponential.Retryer{},
+				repo:               repo,
+			},
+			args: args{
+				ctx: context.Background(),
+				input: &jobworker.EnqueueBatchInput{
+					Queue: "foo",
+					Entries: []*jobworker.EnqueueBatchEntry{
+						{
+							ID:      "uniq-1",
+							Content: "",
+						},
+						{
+							ID:      "uniq-2",
+							Content: "hello",
+						},
+					},
+				},
+			},
+			want:    nil,
+			wantErr: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
