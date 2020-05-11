@@ -210,6 +210,9 @@ func (c *Connector) FailJob(ctx context.Context, input *jobworker.FailJobInput) 
 		Job:               input.Job,
 		VisibilityTimeout: 0,
 	})
+	if err != nil {
+		return nil, err
+	}
 	return &jobworker.FailJobOutput{}, err
 }
 
@@ -496,10 +499,14 @@ func (c *Connector) ChangeJobVisibility(ctx context.Context, input *ChangeJobVis
 	out, err := c.GetQueueAttributes(ctx, &GetQueueAttributesInput{
 		QueueName: input.Job.QueueName,
 	})
+	if err != nil {
+		return nil, err
+	}
+	raw := input.Job.Raw.(*internal.Job)
 	_, err = c.retryer.Do(ctx, func(ctx context.Context) error {
 		_, err = c.repo.updateJobVisibility(ctx,
 			out.Attributes.RawName,
-			input.Job.Metadata[internal.MetadataKeyJobID],
+			raw.JobID,
 			input.VisibilityTimeout)
 		if err != nil {
 			return err

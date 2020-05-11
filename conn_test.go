@@ -503,3 +503,127 @@ func TestConnector_CompleteJob(t *testing.T) {
 		})
 	}
 }
+
+func TestConnector_FailJob(t *testing.T) {
+
+	repo := &repositoryMock{
+		getQueueAttributesFunc: func(ctx context.Context, queueName string) (*QueueAttributes, error) {
+			if queueName == "" {
+				return nil, errors.New("queue mame is empty")
+			}
+			return &QueueAttributes{
+				Name:    "foo",
+				RawName: "raw_foo",
+			}, nil
+		},
+		updateJobVisibilityFunc: func(ctx context.Context, queueRawName, jobID string, visibilityTimeout int64) (updated bool, err error) {
+			if jobID == "" {
+				return false, errors.New("job id is empty")
+			}
+			return true, nil
+		},
+	}
+
+	type fields struct {
+		isUniqueViolation  func(err error) bool
+		isDeadlockDetected func(err error) bool
+		retryer            exponential.Retryer
+		repo               repository
+	}
+	type args struct {
+		ctx   context.Context
+		input *jobworker.FailJobInput
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		args    args
+		want    *jobworker.FailJobOutput
+		wantErr bool
+	}{
+		{
+			name: "normal case",
+			fields: fields{
+				isUniqueViolation:  defaultIsisUniqueViolation,
+				isDeadlockDetected: defaultIsDeadlockDetected,
+				retryer:            exponential.Retryer{},
+				repo:               repo,
+			},
+			args: args{
+				ctx: context.Background(),
+				input: &jobworker.FailJobInput{
+					Job: &jobworker.Job{
+						QueueName: "foo",
+						Raw: &internal.Job{
+							JobID: "foo-1",
+						},
+					},
+				},
+			},
+			want:    &jobworker.FailJobOutput{},
+			wantErr: false,
+		},
+		{
+			name: "error case",
+			fields: fields{
+				isUniqueViolation:  defaultIsisUniqueViolation,
+				isDeadlockDetected: defaultIsDeadlockDetected,
+				retryer:            exponential.Retryer{},
+				repo:               repo,
+			},
+			args: args{
+				ctx: context.Background(),
+				input: &jobworker.FailJobInput{
+					Job: &jobworker.Job{
+						QueueName: "",
+						Raw: &internal.Job{
+							JobID: "foo-1",
+						},
+					},
+				},
+			},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "error case",
+			fields: fields{
+				isUniqueViolation:  defaultIsisUniqueViolation,
+				isDeadlockDetected: defaultIsDeadlockDetected,
+				retryer:            exponential.Retryer{},
+				repo:               repo,
+			},
+			args: args{
+				ctx: context.Background(),
+				input: &jobworker.FailJobInput{
+					Job: &jobworker.Job{
+						QueueName: "foo",
+						Raw: &internal.Job{
+							JobID: "",
+						},
+					},
+				},
+			},
+			want:    nil,
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &Connector{
+				isUniqueViolation:  tt.fields.isUniqueViolation,
+				isDeadlockDetected: tt.fields.isDeadlockDetected,
+				retryer:            tt.fields.retryer,
+				repo:               tt.fields.repo,
+			}
+			got, err := c.FailJob(tt.args.ctx, tt.args.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("FailJob() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("FailJob() got = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
