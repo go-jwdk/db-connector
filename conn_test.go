@@ -761,3 +761,150 @@ func TestConnector_GetQueueAttributes(t *testing.T) {
 		})
 	}
 }
+
+func TestConnector_DeleteJobBatch(t *testing.T) {
+	repo := &repositoryMock{
+		getQueueAttributesFunc: func(ctx context.Context, queueName string) (*QueueAttributes, error) {
+			if queueName == "" {
+				return nil, errors.New("queue name is empty")
+			}
+			return &QueueAttributes{
+				Name:    "foo",
+				RawName: "raw_foo",
+			}, nil
+		},
+		deleteJobFunc: func(ctx context.Context, queue string, jobID string) error {
+			if jobID == "" {
+				return errors.New("job id is empty")
+			}
+			return nil
+		},
+	}
+
+	type fields struct {
+		isUniqueViolation  func(err error) bool
+		isDeadlockDetected func(err error) bool
+		retryer            exponential.Retryer
+		repo               repository
+	}
+	type args struct {
+		ctx   context.Context
+		input *DeleteJobBatchInput
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		args    args
+		want    *DeleteJobBatchOutput
+		wantErr bool
+	}{
+		{
+			name: "normal case",
+			fields: fields{
+				isUniqueViolation:  defaultIsisUniqueViolation,
+				isDeadlockDetected: defaultIsDeadlockDetected,
+				retryer:            exponential.Retryer{},
+				repo:               repo,
+			},
+			args: args{
+				ctx: context.Background(),
+				input: &DeleteJobBatchInput{
+					Jobs: []*jobworker.Job{
+						{
+							QueueName: "foo",
+							Raw: &internal.Job{
+								JobID: "1",
+							},
+						},
+						{
+							QueueName: "foo",
+							Raw: &internal.Job{
+								JobID: "2",
+							},
+						},
+					},
+				},
+			},
+			want:    &DeleteJobBatchOutput{},
+			wantErr: false,
+		},
+		{
+			name: "error case",
+			fields: fields{
+				isUniqueViolation:  defaultIsisUniqueViolation,
+				isDeadlockDetected: defaultIsDeadlockDetected,
+				retryer:            exponential.Retryer{},
+				repo:               repo,
+			},
+			args: args{
+				ctx: context.Background(),
+				input: &DeleteJobBatchInput{
+					Jobs: []*jobworker.Job{
+						{
+							QueueName: "foo",
+							Raw: &internal.Job{
+								JobID: "1",
+							},
+						},
+						{
+							QueueName: "",
+							Raw: &internal.Job{
+								JobID: "2",
+							},
+						},
+					},
+				},
+			},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "error case",
+			fields: fields{
+				isUniqueViolation:  defaultIsisUniqueViolation,
+				isDeadlockDetected: defaultIsDeadlockDetected,
+				retryer:            exponential.Retryer{},
+				repo:               repo,
+			},
+			args: args{
+				ctx: context.Background(),
+				input: &DeleteJobBatchInput{
+					Jobs: []*jobworker.Job{
+						{
+							QueueName: "foo",
+							Raw: &internal.Job{
+								JobID: "1",
+							},
+						},
+						{
+							QueueName: "foo",
+							Raw: &internal.Job{
+								JobID: "",
+							},
+						},
+					},
+				},
+			},
+			want:    nil,
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &Connector{
+				isUniqueViolation:  tt.fields.isUniqueViolation,
+				isDeadlockDetected: tt.fields.isDeadlockDetected,
+				retryer:            tt.fields.retryer,
+				repo:               tt.fields.repo,
+			}
+			got, err := c.DeleteJobBatch(tt.args.ctx, tt.args.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("DeleteJobBatch() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("DeleteJobBatch() got = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
