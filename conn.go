@@ -368,22 +368,26 @@ func (c *Connector) GrabJobs(ctx context.Context, input *GrabJobsInput) (*GrabJo
 		return nil, err
 	}
 
-	rawJobs, err := c.repo.getJobs(ctx, out.Attributes.RawName, input.MaxNumberOfJobs)
+	maxNumberOfJobs := input.MaxNumberOfJobs
+	if maxNumberOfJobs == 0 {
+		maxNumberOfJobs = defaultMaxNumberOfJobs
+	}
+
+	rawJobs, err := c.repo.getJobs(ctx, out.Attributes.RawName, maxNumberOfJobs)
 	if err != nil {
 		return nil, err
 	}
 
 	var (
-		deadJobs  []*jobworker.Job
-		aliveJobs []*jobworker.Job
+		deadJobs  []*internal.Job
+		aliveJobs []*internal.Job
 	)
 
 	for _, rawJob := range rawJobs {
-		job := internal.NewJob(out.Attributes.Name, rawJob, c)
 		if rawJob.RetryCount > out.Attributes.MaxReceiveCount {
-			deadJobs = append(deadJobs, job)
+			deadJobs = append(deadJobs, rawJob)
 		} else {
-			aliveJobs = append(aliveJobs, job)
+			aliveJobs = append(aliveJobs, rawJob)
 		}
 	}
 
@@ -394,31 +398,41 @@ func (c *Connector) GrabJobs(ctx context.Context, input *GrabJobsInput) (*GrabJo
 		}
 	}
 
-	shuffled := map[*jobworker.Job]struct{}{}
+	if len(aliveJobs) == 0 {
+		return &GrabJobsOutput{}, nil
+	}
+
+	shuffled := map[*internal.Job]struct{}{}
 	for _, j := range aliveJobs {
 		shuffled[j] = struct{}{}
 	}
 
 	var deliveries []*jobworker.Job
-	for job := range shuffled {
-		rawJob := job.Raw.(*internal.Job)
+	for rawJob := range shuffled {
 		grabbed, err := c.repo.grabJob(ctx, out.Attributes.RawName,
 			rawJob.JobID, rawJob.RetryCount, rawJob.InvisibleUntil, input.VisibilityTimeout)
 		if err != nil {
-			c.loggerFunc("could not grab job", err)
+			c.debug("could not grab job", err)
 			continue
 		}
-		if !grabbed {
+		if grabbed == nil {
 			continue
 		}
-		deliveries = append(deliveries, job)
+		deliveries = append(deliveries, internal.NewJob(out.Attributes.Name, grabbed, c))
 	}
 	return &GrabJobsOutput{
 		Jobs: deliveries,
 	}, nil
 }
 
-func (c *Connector) handleDeadJobs(ctx context.Context, queueAttributes *QueueAttributes, deadJobs []*jobworker.Job) error {
+func (c *Connector) handleDeadJobs(ctx context.Context, queueAttributes *QueueAttributes, deadJobs []*internal.Job) error {
+
+	var jobs []*jobworker.Job
+	for _, rawJob := range deadJobs {
+		job := internal.NewJob(queueAttributes.Name, rawJob, c)
+		jobs = append(jobs, job)
+	}
+
 	if name, ok := queueAttributes.HasDeadLetter(); ok {
 		out, err := c.GetQueueAttributes(ctx, &GetQueueAttributesInput{
 			QueueName: name,
@@ -427,7 +441,7 @@ func (c *Connector) handleDeadJobs(ctx context.Context, queueAttributes *QueueAt
 			return err
 		}
 		_, err = c.MoveJobBatch(ctx, &MoveJobBatchInput{
-			Jobs: deadJobs,
+			Jobs: jobs,
 			To:   out.Attributes.Name,
 		})
 		if err != nil {
@@ -435,7 +449,7 @@ func (c *Connector) handleDeadJobs(ctx context.Context, queueAttributes *QueueAt
 		}
 	} else {
 		_, err := c.DeleteJobBatch(ctx, &DeleteJobBatchInput{
-			Jobs: deadJobs,
+			Jobs: jobs,
 		})
 		if err != nil {
 			return fmt.Errorf("could not delete job batch: %s", err)

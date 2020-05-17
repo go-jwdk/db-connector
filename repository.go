@@ -14,7 +14,7 @@ type repository interface {
 	getJob(ctx context.Context, queue string, jobID string) (*internal.Job, error)
 	getJobs(ctx context.Context, queue string, limit int64) ([]*internal.Job, error)
 	grabJob(ctx context.Context,
-		queue string, jobID string, currentRetryCount, currentInvisibleUntil, invisibleTime int64) (grabbed bool, err error)
+		queue string, jobID string, currentRetryCount, currentInvisibleUntil, invisibleTime int64) (*internal.Job, error)
 	updateJobVisibility(ctx context.Context, queueRawName, jobID string, visibilityTimeout int64) (updated bool, err error)
 	getQueueAttributes(ctx context.Context, queueName string) (*QueueAttributes, error)
 	createQueueAttributes(ctx context.Context, queueName, queueRawName string, visibilityTimeout, delaySeconds, maxReceiveCount int64, deadLetterTarget *string) error
@@ -118,14 +118,17 @@ func (r *repositoryOnDB) getJobs(ctx context.Context, queue string, limit int64)
 }
 
 func (r *repositoryOnDB) grabJob(ctx context.Context,
-	queue string, jobID string, currentRetryCount, currentInvisibleUntil, invisibleTime int64) (grabbed bool, err error) {
+	queue string, jobID string, currentRetryCount, currentInvisibleUntil, invisibleTime int64) (*internal.Job, error) {
 	stmt, args := r.tmpl.NewHideJobDML(queue, jobID, currentRetryCount, currentInvisibleUntil, invisibleTime)
 	result, err := r.querier.ExecContext(ctx, stmt, args...)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	affected, _ := result.RowsAffected()
-	return affected == 1, nil
+	if affected == 0 {
+		return nil, nil
+	}
+	return r.getJob(ctx, queue, jobID)
 }
 
 func (r *repositoryOnDB) updateJobVisibility(ctx context.Context, queueRawName, jobID string, visibilityTimeout int64) (updated bool, err error) {

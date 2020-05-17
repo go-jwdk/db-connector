@@ -30,8 +30,12 @@ func TestConnector_Subscribe(t *testing.T) {
 				{}, {}, {},
 			}, nil
 		},
-		grabJobFunc: func(ctx context.Context, queue string, jobID string, currentRetryCount, currentInvisibleUntil, invisibleTime int64) (grabbed bool, err error) {
-			return true, nil
+		grabJobFunc: func(ctx context.Context, queue string, jobID string, currentRetryCount, currentInvisibleUntil, invisibleTime int64) (*internal.Job, error) {
+			return &internal.Job{
+				JobID:          jobID,
+				InvisibleUntil: time.Now().Unix() + invisibleTime,
+				RetryCount:     currentRetryCount + 1,
+			}, nil
 		},
 	}
 
@@ -910,7 +914,6 @@ func TestConnector_DeleteJobBatch(t *testing.T) {
 }
 
 func TestConnector_MoveJobBatch(t *testing.T) {
-
 	repo := &repositoryMock{
 		getQueueAttributesFunc: func(ctx context.Context, queueName string) (*QueueAttributes, error) {
 			if queueName == "" {
@@ -934,7 +937,6 @@ func TestConnector_MoveJobBatch(t *testing.T) {
 			return nil
 		},
 	}
-
 	type fields struct {
 		isUniqueViolation  func(err error) bool
 		isDeadlockDetected func(err error) bool
@@ -1089,3 +1091,153 @@ func TestConnector_MoveJobBatch(t *testing.T) {
 		})
 	}
 }
+
+//func TestConnector_GrabJobs(t *testing.T) {
+//	repo := &repositoryMock{
+//		getQueueAttributesFunc: func(ctx context.Context, queueName string) (*QueueAttributes, error) {
+//			if queueName == "" {
+//				return nil, errors.New("queue name is empty")
+//			}
+//			return &QueueAttributes{
+//				Name:    "foo",
+//				RawName: "raw_foo",
+//			}, nil
+//		},
+//		enqueueJobWithTimeFunc: func(ctx context.Context, queue string, jobID, content string, deduplicationID, groupID *string, enqueueAt int64) error {
+//			if jobID == "99999" {
+//				return errors.New("unique violation")
+//			}
+//			return nil
+//		},
+//		deleteJobFunc: func(ctx context.Context, queue string, jobID string) error {
+//			if jobID == "" {
+//				return errors.New("job id is empty")
+//			}
+//			return nil
+//		},
+//
+//		//	metadata := make(map[string]string)
+//		//	metadata[MetadataKeySecID] = strconv.FormatInt(job.SecID, 10)
+//		//	metadata[MetadataKeyJobID] = job.JobID
+//		//	if job.DeduplicationID != nil {
+//		//	metadata[MetadataKeyDeduplicationID] = *job.DeduplicationID
+//		//}
+//		//	if job.GroupID != nil {
+//		//	metadata[MetadataKeyGroupID] = *job.GroupID
+//		//}
+//		//	metadata[MetadataKeyInvisibleUntil] = strconv.FormatInt(job.InvisibleUntil, 10)
+//		//	metadata[MetadataKeyRetryCount] = strconv.FormatInt(job.RetryCount, 10)
+//		//	metadata[MetadataKeyEnqueueAt] = strconv.FormatInt(job.EnqueueAt, 10)
+//
+//		getJobsFunc: func(ctx context.Context, queue string, limit int64) ([]*internal.Job, error) {
+//			return []*internal.Job{
+//				{
+//					SecID:      1,
+//					JobID:      "job-id-1",
+//					Content:    "hello",
+//					RetryCount: 1,
+//				},
+//				{
+//					SecID:      2,
+//					JobID:      "job-id-2",
+//					Content:    "bye",
+//					RetryCount: 2,
+//				},
+//			}, nil
+//		},
+//		grabJobFunc: func(ctx context.Context, queue string, jobID string, currentRetryCount, currentInvisibleUntil, invisibleTime int64) (grabbed bool, err error) {
+//			return true, nil
+//		},
+//	}
+//	type fields struct {
+//		isUniqueViolation  func(err error) bool
+//		isDeadlockDetected func(err error) bool
+//		retryer            exponential.Retryer
+//		repo               repository
+//	}
+//	type args struct {
+//		ctx   context.Context
+//		input *GrabJobsInput
+//	}
+//	tests := []struct {
+//		name    string
+//		fields  fields
+//		args    args
+//		want    *GrabJobsOutput
+//		wantErr bool
+//	}{
+//		{
+//			name: "normal case",
+//			fields: fields{
+//				isUniqueViolation:  defaultIsisUniqueViolation,
+//				isDeadlockDetected: defaultIsDeadlockDetected,
+//				retryer:            exponential.Retryer{},
+//				repo:               repo,
+//			},
+//			args: args{
+//				ctx: context.Background(),
+//				input: &GrabJobsInput{
+//					QueueName:         "foo",
+//					MaxNumberOfJobs:   3,
+//					VisibilityTimeout: 1,
+//				},
+//			},
+//			want: &GrabJobsOutput{
+//				Jobs: []*jobworker.Job{
+//					{
+//						QueueName: "foo",
+//						Content:   "hello",
+//						Metadata: map[string]string{
+//							"SecID":      "1",
+//							"JobID":      "job-id-1",
+//							"RetryCount": "1",
+//						},
+//					},
+//					{
+//						QueueName: "foo",
+//						Content:   "bye",
+//						Metadata: map[string]string{
+//							"SecID":      "2",
+//							"JobID":      "job-id-2",
+//							"RetryCount": "2",
+//						},
+//					},
+//				},
+//			},
+//			wantErr: false,
+//		},
+//	}
+//	for _, tt := range tests {
+//		t.Run(tt.name, func(t *testing.T) {
+//			c := &Connector{
+//				isUniqueViolation:  tt.fields.isUniqueViolation,
+//				isDeadlockDetected: tt.fields.isDeadlockDetected,
+//				retryer:            tt.fields.retryer,
+//				repo:               tt.fields.repo,
+//			}
+//			got, err := c.GrabJobs(tt.args.ctx, tt.args.input)
+//			if (err != nil) != tt.wantErr {
+//				t.Errorf("GrabJobs() error = %v, wantErr %v", err, tt.wantErr)
+//				return
+//			}
+//
+//			for _, want := range tt.want.Jobs {
+//				var matched bool
+//				for _, got := range got.Jobs {
+//					if want.Metadata["JobID"] != got.Metadata["JobID"] {
+//						continue
+//					}
+//					if !reflect.DeepEqual(got.Metadata, want.Metadata) {
+//						t.Errorf("GrabJobs() Metadata got = %v, want %v", got.Metadata, want.Metadata)
+//						continue
+//					}
+//					matched = true
+//					break
+//				}
+//				if !matched {
+//					t.Errorf("GrabJobs() could not grab job, want %v", want)
+//				}
+//			}
+//		})
+//	}
+//}

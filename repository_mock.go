@@ -12,7 +12,7 @@ type repositoryMock struct {
 	deleteJobFunc                  func(ctx context.Context, queue string, jobID string) error
 	getJobFunc                     func(ctx context.Context, queue string, jobID string) (*internal.Job, error)
 	getJobsFunc                    func(ctx context.Context, queue string, limit int64) ([]*internal.Job, error)
-	grabJobFunc                    func(ctx context.Context, queue string, jobID string, currentRetryCount, currentInvisibleUntil, invisibleTime int64) (grabbed bool, err error)
+	grabJobFunc                    func(ctx context.Context, queue string, jobID string, currentRetryCount, currentInvisibleUntil, invisibleTime int64) (*internal.Job, error)
 	updateJobVisibilityFunc        func(ctx context.Context, queueRawName, jobID string, visibilityTimeout int64) (updated bool, err error)
 	getQueueAttributesFunc         func(ctx context.Context, queueName string) (*QueueAttributes, error)
 	createQueueAttributesFunc      func(ctx context.Context, queueName, queueRawName string, visibilityTimeout, delaySeconds, maxReceiveCount int64, deadLetterTarget *string) error
@@ -60,7 +60,7 @@ func (m *repositoryMock) getJobs(ctx context.Context, queue string, limit int64)
 	return m.getJobsFunc(ctx, queue, limit)
 }
 
-func (m *repositoryMock) grabJob(ctx context.Context, queue string, jobID string, currentRetryCount, currentInvisibleUntil, invisibleTime int64) (grabbed bool, err error) {
+func (m *repositoryMock) grabJob(ctx context.Context, queue string, jobID string, currentRetryCount, currentInvisibleUntil, invisibleTime int64) (*internal.Job, error) {
 	if m.grabJobFunc == nil {
 		panic("This method is not defined.")
 	}
