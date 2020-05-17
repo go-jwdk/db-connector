@@ -908,3 +908,184 @@ func TestConnector_DeleteJobBatch(t *testing.T) {
 		})
 	}
 }
+
+func TestConnector_MoveJobBatch(t *testing.T) {
+
+	repo := &repositoryMock{
+		getQueueAttributesFunc: func(ctx context.Context, queueName string) (*QueueAttributes, error) {
+			if queueName == "" {
+				return nil, errors.New("queue name is empty")
+			}
+			return &QueueAttributes{
+				Name:    "foo",
+				RawName: "raw_foo",
+			}, nil
+		},
+		enqueueJobWithTimeFunc: func(ctx context.Context, queue string, jobID, content string, deduplicationID, groupID *string, enqueueAt int64) error {
+			if jobID == "99999" {
+				return errors.New("unique violation")
+			}
+			return nil
+		},
+		deleteJobFunc: func(ctx context.Context, queue string, jobID string) error {
+			if jobID == "" {
+				return errors.New("job id is empty")
+			}
+			return nil
+		},
+	}
+
+	type fields struct {
+		isUniqueViolation  func(err error) bool
+		isDeadlockDetected func(err error) bool
+		retryer            exponential.Retryer
+		repo               repository
+	}
+	type args struct {
+		ctx   context.Context
+		input *MoveJobBatchInput
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		args    args
+		want    *MoveJobBatchOutput
+		wantErr bool
+	}{
+		{
+			name: "normal case",
+			fields: fields{
+				isUniqueViolation:  defaultIsisUniqueViolation,
+				isDeadlockDetected: defaultIsDeadlockDetected,
+				retryer:            exponential.Retryer{},
+				repo:               repo,
+			},
+			args: args{
+				ctx: context.Background(),
+				input: &MoveJobBatchInput{
+					Jobs: []*jobworker.Job{
+						{
+							QueueName: "foo",
+							Content:   "hello",
+							Raw: &internal.Job{
+								SecID:           1,
+								JobID:           "1",
+								DeduplicationID: nil,
+								GroupID:         nil,
+								InvisibleUntil:  0,
+								RetryCount:      0,
+								EnqueueAt:       time.Date(2020, 5, 1, 2, 3, 4, 0, time.UTC).Unix(),
+							},
+						},
+					},
+					To: "bar",
+				},
+			},
+			want:    &MoveJobBatchOutput{},
+			wantErr: false,
+		},
+		{
+			name: "error case",
+			fields: fields{
+				isUniqueViolation:  defaultIsisUniqueViolation,
+				isDeadlockDetected: defaultIsDeadlockDetected,
+				retryer:            exponential.Retryer{},
+				repo:               repo,
+			},
+			args: args{
+				ctx: context.Background(),
+				input: &MoveJobBatchInput{
+					Jobs: []*jobworker.Job{
+						{
+							QueueName: "",
+							Content:   "hello",
+							Raw: &internal.Job{
+								JobID: "1",
+							},
+						},
+					},
+					To: "bar",
+				},
+			},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "error case",
+			fields: fields{
+				isUniqueViolation:  defaultIsisUniqueViolation,
+				isDeadlockDetected: defaultIsDeadlockDetected,
+				retryer:            exponential.Retryer{},
+				repo:               repo,
+			},
+			args: args{
+				ctx: context.Background(),
+				input: &MoveJobBatchInput{
+					Jobs: []*jobworker.Job{
+						{
+							QueueName: "foo",
+							Content:   "hello",
+							Raw: &internal.Job{
+								JobID:   "1",
+								Content: "hello",
+							},
+						},
+					},
+					To: "",
+				},
+			},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "error case",
+			fields: fields{
+				isUniqueViolation: func(err error) bool {
+					if err.Error() == "unique violation" {
+						return true
+					}
+					return false
+				},
+				isDeadlockDetected: defaultIsDeadlockDetected,
+				retryer:            exponential.Retryer{},
+				repo:               repo,
+			},
+			args: args{
+				ctx: context.Background(),
+				input: &MoveJobBatchInput{
+					Jobs: []*jobworker.Job{
+						{
+							QueueName: "foo",
+							Content:   "hello",
+							Raw: &internal.Job{
+								JobID:   "99999",
+								Content: "hello",
+							},
+						},
+					},
+					To: "bar",
+				},
+			},
+			want:    &MoveJobBatchOutput{},
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &Connector{
+				isUniqueViolation:  tt.fields.isUniqueViolation,
+				isDeadlockDetected: tt.fields.isDeadlockDetected,
+				retryer:            tt.fields.retryer,
+				repo:               tt.fields.repo,
+			}
+			got, err := c.MoveJobBatch(tt.args.ctx, tt.args.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("MoveJobBatch() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("MoveJobBatch() got = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

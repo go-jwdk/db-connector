@@ -316,7 +316,7 @@ func (c *Connector) MoveJobBatch(ctx context.Context, input *MoveJobBatchInput) 
 				err := repo.enqueueJobWithTime(ctx,
 					to.Attributes.RawName,
 					raw.JobID,
-					raw.Content,
+					job.Content,
 					raw.DeduplicationID,
 					raw.GroupID,
 					raw.EnqueueAt,
@@ -343,7 +343,10 @@ func (c *Connector) MoveJobBatch(ctx context.Context, input *MoveJobBatchInput) 
 	}, func(err error) bool {
 		return c.isDeadlockDetected(err)
 	})
-	return nil, err
+	if err != nil {
+		return nil, err
+	}
+	return &MoveJobBatchOutput{}, nil
 }
 
 type GrabJobsInput struct {
