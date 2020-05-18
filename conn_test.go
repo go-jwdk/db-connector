@@ -31,11 +31,11 @@ func TestConnector_Subscribe(t *testing.T) {
 				{}, {}, {},
 			}, nil
 		},
-		grabJobFunc: func(ctx context.Context, queue string, jobID string, currentRetryCount, currentInvisibleUntil, invisibleTime int64) (*internal.Job, error) {
+		grabJobFunc: func(ctx context.Context, queue string, jobID string, currentReceiveCount, currentInvisibleUntil, invisibleTime int64) (*internal.Job, error) {
 			return &internal.Job{
 				JobID:          jobID,
 				InvisibleUntil: time.Now().Unix() + invisibleTime,
-				RetryCount:     currentRetryCount + 1,
+				ReceiveCount:   currentReceiveCount + 1,
 			}, nil
 		},
 	}
@@ -976,7 +976,7 @@ func TestConnector_MoveJobBatch(t *testing.T) {
 								DeduplicationID: nil,
 								GroupID:         nil,
 								InvisibleUntil:  0,
-								RetryCount:      0,
+								ReceiveCount:    0,
 								EnqueueAt:       time.Date(2020, 5, 1, 2, 3, 4, 0, time.UTC).Unix(),
 							},
 						},
@@ -1120,23 +1120,23 @@ func TestConnector_GrabJobs(t *testing.T) {
 		getJobsFunc: func(ctx context.Context, queue string, limit int64) ([]*internal.Job, error) {
 			return []*internal.Job{
 				{
-					JobID:      "job-id-1",
-					Content:    "hello",
-					RetryCount: 2,
+					JobID:        "job-id-1",
+					Content:      "hello",
+					ReceiveCount: 2,
 				},
 				{
-					JobID:      "job-id-2",
-					Content:    "hello",
-					RetryCount: 2,
+					JobID:        "job-id-2",
+					Content:      "hello",
+					ReceiveCount: 2,
 				},
 			}, nil
 		},
-		grabJobFunc: func(ctx context.Context, queue string, jobID string, currentRetryCount, currentInvisibleUntil, invisibleTime int64) (*internal.Job, error) {
+		grabJobFunc: func(ctx context.Context, queue string, jobID string, currentReceiveCount, currentInvisibleUntil, invisibleTime int64) (*internal.Job, error) {
 			return &internal.Job{
 				JobID:          jobID,
 				Content:        "hello",
 				InvisibleUntil: time.Now().Unix() + invisibleTime,
-				RetryCount:     currentRetryCount + 1,
+				ReceiveCount:   currentReceiveCount + 1,
 			}, nil
 		},
 	}
@@ -1179,16 +1179,16 @@ func TestConnector_GrabJobs(t *testing.T) {
 						QueueName: "foo",
 						Content:   "hello",
 						Metadata: map[string]string{
-							"JobID":      "job-id-1",
-							"RetryCount": "3",
+							"JobID":        "job-id-1",
+							"ReceiveCount": "3",
 						},
 					},
 					{
 						QueueName: "foo",
 						Content:   "bye",
 						Metadata: map[string]string{
-							"JobID":      "job-id-2",
-							"RetryCount": "3",
+							"JobID":        "job-id-2",
+							"ReceiveCount": "3",
 						},
 					},
 				},
@@ -1216,8 +1216,8 @@ func TestConnector_GrabJobs(t *testing.T) {
 					if want.Metadata["JobID"] != got.Metadata["JobID"] {
 						continue
 					}
-					if got.Metadata["RetryCount"] != want.Metadata["RetryCount"] {
-						t.Errorf("GrabJobs() MetadaRetryCountta got = %v, want %v", got.Metadata["RetryCount"], want.Metadata["RetryCount"])
+					if got.Metadata["ReceiveCount"] != want.Metadata["ReceiveCount"] {
+						t.Errorf("GrabJobs() Metadata[ReceiveCount] got = %v, want %v", got.Metadata["ReceiveCount"], want.Metadata["ReceiveCount"])
 						continue
 					}
 					matched = true

@@ -3,7 +3,7 @@ package dbconnector
 type SQLTemplate interface {
 	NewFindJobDML(queueRawName string, jobID string) (string, []interface{})
 	NewFindJobsDML(queueRawName string, limit int64) (string, []interface{})
-	NewHideJobDML(queueRawName string, jobID string, oldRetryCount, oldInvisibleUntil, invisibleTime int64) (string, []interface{})
+	NewHideJobDML(queueRawName string, jobID string, oldReceiveCount, oldInvisibleUntil, invisibleTime int64) (string, []interface{})
 	NewEnqueueJobDML(queueRawName, jobID, content string, deduplicationID, groupID *string, delaySeconds int64) (string, []interface{})
 	NewEnqueueJobWithTimeDML(queueRawName, jobID, content string, deduplicationID, groupID *string, enqueueAt int64) (string, []interface{})
 	NewDeleteJobDML(queueRawName, jobID string) (string, []interface{})

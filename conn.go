@@ -384,7 +384,7 @@ func (c *Connector) GrabJobs(ctx context.Context, input *GrabJobsInput) (*GrabJo
 	)
 
 	for _, rawJob := range rawJobs {
-		if rawJob.RetryCount > out.Attributes.MaxReceiveCount {
+		if rawJob.ReceiveCount > out.Attributes.MaxReceiveCount {
 			deadJobs = append(deadJobs, rawJob)
 		} else {
 			aliveJobs = append(aliveJobs, rawJob)
@@ -410,7 +410,7 @@ func (c *Connector) GrabJobs(ctx context.Context, input *GrabJobsInput) (*GrabJo
 	var deliveries []*jobworker.Job
 	for rawJob := range shuffled {
 		grabbed, err := c.repo.grabJob(ctx, out.Attributes.RawName,
-			rawJob.JobID, rawJob.RetryCount, rawJob.InvisibleUntil, input.VisibilityTimeout)
+			rawJob.JobID, rawJob.ReceiveCount, rawJob.InvisibleUntil, input.VisibilityTimeout)
 		if err != nil {
 			c.debug("could not grab job", err)
 			continue

@@ -14,7 +14,7 @@ type repository interface {
 	getJob(ctx context.Context, queue string, jobID string) (*internal.Job, error)
 	getJobs(ctx context.Context, queue string, limit int64) ([]*internal.Job, error)
 	grabJob(ctx context.Context,
-		queue string, jobID string, currentRetryCount, currentInvisibleUntil, invisibleTime int64) (*internal.Job, error)
+		queue string, jobID string, currentReceiveCount, currentInvisibleUntil, invisibleTime int64) (*internal.Job, error)
 	updateJobVisibility(ctx context.Context, queueRawName, jobID string, visibilityTimeout int64) (updated bool, err error)
 	getQueueAttributes(ctx context.Context, queueName string) (*QueueAttributes, error)
 	createQueueAttributes(ctx context.Context, queueName, queueRawName string, visibilityTimeout, delaySeconds, maxReceiveCount int64, deadLetterTarget *string) error
@@ -77,7 +77,7 @@ func (r *repositoryOnDB) getJob(ctx context.Context, queue string, jobID string)
 		&job.DeduplicationID,
 		&job.GroupID,
 		&job.InvisibleUntil,
-		&job.RetryCount,
+		&job.ReceiveCount,
 		&job.EnqueueAt,
 	); err != nil {
 		return nil, err
@@ -107,7 +107,7 @@ func (r *repositoryOnDB) getJobs(ctx context.Context, queue string, limit int64)
 			&job.DeduplicationID,
 			&job.GroupID,
 			&job.InvisibleUntil,
-			&job.RetryCount,
+			&job.ReceiveCount,
 			&job.EnqueueAt,
 		); err != nil {
 			return nil, err
@@ -118,8 +118,8 @@ func (r *repositoryOnDB) getJobs(ctx context.Context, queue string, limit int64)
 }
 
 func (r *repositoryOnDB) grabJob(ctx context.Context,
-	queue string, jobID string, currentRetryCount, currentInvisibleUntil, invisibleTime int64) (*internal.Job, error) {
-	stmt, args := r.tmpl.NewHideJobDML(queue, jobID, currentRetryCount, currentInvisibleUntil, invisibleTime)
+	queue string, jobID string, currentReceiveCount, currentInvisibleUntil, invisibleTime int64) (*internal.Job, error) {
+	stmt, args := r.tmpl.NewHideJobDML(queue, jobID, currentReceiveCount, currentInvisibleUntil, invisibleTime)
 	result, err := r.querier.ExecContext(ctx, stmt, args...)
 	if err != nil {
 		return nil, err

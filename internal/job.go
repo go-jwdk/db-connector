@@ -12,7 +12,7 @@ const (
 	MetadataKeyDeduplicationID = "DeduplicationID"
 	MetadataKeyGroupID         = "GroupID"
 	MetadataKeyInvisibleUntil  = "InvisibleUntil"
-	MetadataKeyRetryCount      = "RetryCount"
+	MetadataKeyReceiveCount    = "ReceiveCount"
 	MetadataKeyEnqueueAt       = "EnqueueAt"
 
 	MetadataKeyDelaySeconds = "DelaySeconds"
@@ -30,7 +30,7 @@ func NewJob(queueName string, job *Job, conn jobworker.Connector) *jobworker.Job
 		metadata[MetadataKeyGroupID] = *job.GroupID
 	}
 	metadata[MetadataKeyInvisibleUntil] = strconv.FormatInt(job.InvisibleUntil, 10)
-	metadata[MetadataKeyRetryCount] = strconv.FormatInt(job.RetryCount, 10)
+	metadata[MetadataKeyReceiveCount] = strconv.FormatInt(job.ReceiveCount, 10)
 	metadata[MetadataKeyEnqueueAt] = strconv.FormatInt(job.EnqueueAt, 10)
 
 	return &jobworker.Job{
@@ -50,6 +50,6 @@ type Job struct {
 	DeduplicationID *string
 	GroupID         *string
 	InvisibleUntil  int64
-	RetryCount      int64
+	ReceiveCount    int64
 	EnqueueAt       int64
 }
