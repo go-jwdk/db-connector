@@ -404,10 +404,6 @@ func (c *Connector) GrabJobs(ctx context.Context, input *GrabJobsInput) (*GrabJo
 		return &GrabJobsOutput{}, nil
 	}
 
-	//shuffled := map[*internal.Job]struct{}{}
-	//for _, j := range aliveJobs {
-	//	shuffled[j] = struct{}{}
-	//}
 	shuffle(aliveJobs)
 
 	var deliveries []*jobworker.Job
