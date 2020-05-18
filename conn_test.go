@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"reflect"
 	"testing"
 	"time"
@@ -1102,7 +1101,7 @@ func TestConnector_GrabJobs(t *testing.T) {
 			return &QueueAttributes{
 				Name:            "foo",
 				RawName:         "raw_foo",
-				MaxReceiveCount: 3,
+				MaxReceiveCount: 2,
 			}, nil
 		},
 		enqueueJobWithTimeFunc: func(ctx context.Context, queue string, jobID, content string, deduplicationID, groupID *string, enqueueAt int64) error {
@@ -1118,16 +1117,21 @@ func TestConnector_GrabJobs(t *testing.T) {
 			return nil
 		},
 		getJobsFunc: func(ctx context.Context, queue string, limit int64) ([]*internal.Job, error) {
+			if limit < 0 {
+				return nil, nil
+			}
 			return []*internal.Job{
 				{
 					JobID:        "job-id-1",
-					Content:      "hello",
 					ReceiveCount: 2,
 				},
 				{
 					JobID:        "job-id-2",
-					Content:      "hello",
 					ReceiveCount: 2,
+				},
+				{
+					JobID:        "job-id-3",
+					ReceiveCount: 3,
 				},
 			}, nil
 		},
@@ -1195,6 +1199,44 @@ func TestConnector_GrabJobs(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		{
+			name: "normal case",
+			fields: fields{
+				isUniqueViolation:  defaultIsisUniqueViolation,
+				isDeadlockDetected: defaultIsDeadlockDetected,
+				retryer:            exponential.Retryer{},
+				repo:               repo,
+			},
+			args: args{
+				ctx: context.Background(),
+				input: &GrabJobsInput{
+					QueueName:         "foo",
+					MaxNumberOfJobs:   -1,
+					VisibilityTimeout: 1,
+				},
+			},
+			want: &GrabJobsOutput{
+				Jobs: nil,
+			},
+			wantErr: false,
+		},
+		{
+			name: "error case",
+			fields: fields{
+				isUniqueViolation:  defaultIsisUniqueViolation,
+				isDeadlockDetected: defaultIsDeadlockDetected,
+				retryer:            exponential.Retryer{},
+				repo:               repo,
+			},
+			args: args{
+				ctx: context.Background(),
+				input: &GrabJobsInput{
+					QueueName: "",
+				},
+			},
+			want:    nil,
+			wantErr: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1205,19 +1247,26 @@ func TestConnector_GrabJobs(t *testing.T) {
 				repo:               tt.fields.repo,
 			}
 			got, err := c.GrabJobs(tt.args.ctx, tt.args.input)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("GrabJobs() error = %v, wantErr %v", err, tt.wantErr)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("GrabJobs() wantErr %v", tt.wantErr)
+				}
 				return
 			}
+
+			if len(got.Jobs) != len(tt.want.Jobs) {
+				t.Errorf("GrabJobs() size got = %v, want %v", len(got.Jobs), len(tt.want.Jobs))
+				return
+			}
+
 			for _, want := range tt.want.Jobs {
 				var matched bool
 				for _, got := range got.Jobs {
-					fmt.Println("job id => ", want.Metadata["JobID"], got.Metadata["JobID"])
-					if want.Metadata["JobID"] != got.Metadata["JobID"] {
+					if want.Metadata[internal.MetadataKeyJobID] != got.Metadata[internal.MetadataKeyJobID] {
 						continue
 					}
-					if got.Metadata["ReceiveCount"] != want.Metadata["ReceiveCount"] {
-						t.Errorf("GrabJobs() Metadata[ReceiveCount] got = %v, want %v", got.Metadata["ReceiveCount"], want.Metadata["ReceiveCount"])
+					if got.Metadata[internal.MetadataKeyReceiveCount] != want.Metadata[internal.MetadataKeyReceiveCount] {
+						t.Errorf("ReceiveCount got = %v, want %v", got.Metadata["ReceiveCount"], want.Metadata["ReceiveCount"])
 						continue
 					}
 					matched = true

@@ -394,7 +394,8 @@ func (c *Connector) GrabJobs(ctx context.Context, input *GrabJobsInput) (*GrabJo
 	if len(deadJobs) > 0 {
 		err = c.handleDeadJobs(ctx, out.Attributes, deadJobs)
 		if err != nil {
-			c.loggerFunc("could not handle dead job", err)
+			// warning
+			c.debug("could not handle dead job", err)
 		}
 	}
 
