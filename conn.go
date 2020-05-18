@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"math/rand"
 	"strconv"
 	"strings"
 	"time"
@@ -403,13 +404,14 @@ func (c *Connector) GrabJobs(ctx context.Context, input *GrabJobsInput) (*GrabJo
 		return &GrabJobsOutput{}, nil
 	}
 
-	shuffled := map[*internal.Job]struct{}{}
-	for _, j := range aliveJobs {
-		shuffled[j] = struct{}{}
-	}
+	//shuffled := map[*internal.Job]struct{}{}
+	//for _, j := range aliveJobs {
+	//	shuffled[j] = struct{}{}
+	//}
+	shuffle(aliveJobs)
 
 	var deliveries []*jobworker.Job
-	for rawJob := range shuffled {
+	for _, rawJob := range aliveJobs {
 		grabbed, err := c.repo.grabJob(ctx, out.Attributes.RawName,
 			rawJob.JobID, rawJob.ReceiveCount, rawJob.InvisibleUntil, input.VisibilityTimeout)
 		if err != nil {
@@ -424,6 +426,13 @@ func (c *Connector) GrabJobs(ctx context.Context, input *GrabJobsInput) (*GrabJo
 	return &GrabJobsOutput{
 		Jobs: deliveries,
 	}, nil
+}
+
+func shuffle(jobs []*internal.Job) {
+	rand.Seed(time.Now().UnixNano())
+	rand.Shuffle(len(jobs), func(i, j int) {
+		jobs[i], jobs[j] = jobs[j], jobs[i]
+	})
 }
 
 func (c *Connector) handleDeadJobs(ctx context.Context, queueAttributes *QueueAttributes, deadJobs []*internal.Job) error {
