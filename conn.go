@@ -660,13 +660,11 @@ func queueRawName(name string) string {
 }
 
 type SetQueueAttributesInput struct {
-	QueueName              string
-	DelaySeconds           *int64
-	VisibilityTimeout      *int64
-	MaximumMessageSize     *int64
-	MessageRetentionPeriod *int64
-	DeadLetterTarget       *string
-	MaxReceiveCount        *int64
+	QueueName         string
+	DelaySeconds      *int64
+	VisibilityTimeout *int64
+	MaxReceiveCount   *int64
+	DeadLetterTarget  *string
 }
 
 type SetQueueAttributesOutput struct{}
