@@ -1099,8 +1099,8 @@ func TestConnector_GrabJobs(t *testing.T) {
 				return nil, errors.New("queue name is empty")
 			}
 			return &QueueAttributes{
-				Name:            "foo",
-				RawName:         "raw_foo",
+				Name:            queueName,
+				RawName:         "raw_" + queueName,
 				MaxReceiveCount: 2,
 			}, nil
 		},
@@ -1117,8 +1117,11 @@ func TestConnector_GrabJobs(t *testing.T) {
 			return nil
 		},
 		getJobsFunc: func(ctx context.Context, queue string, limit int64) ([]*internal.Job, error) {
-			if limit < 0 {
+			if limit == -1 {
 				return nil, nil
+			}
+			if limit == -2 {
+				return nil, errors.New("invalid limit value")
 			}
 			return []*internal.Job{
 				{
@@ -1136,6 +1139,15 @@ func TestConnector_GrabJobs(t *testing.T) {
 			}, nil
 		},
 		grabJobFunc: func(ctx context.Context, queue string, jobID string, currentReceiveCount, currentInvisibleUntil, invisibleTime int64) (*internal.Job, error) {
+
+			if queue == "raw_bar" {
+				return nil, nil
+			}
+
+			if queue == "raw_baz" {
+				return nil, errors.New("error baz")
+			}
+
 			return &internal.Job{
 				JobID:          jobID,
 				Content:        "hello",
@@ -1221,6 +1233,48 @@ func TestConnector_GrabJobs(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "normal case",
+			fields: fields{
+				isUniqueViolation:  defaultIsisUniqueViolation,
+				isDeadlockDetected: defaultIsDeadlockDetected,
+				retryer:            exponential.Retryer{},
+				repo:               repo,
+			},
+			args: args{
+				ctx: context.Background(),
+				input: &GrabJobsInput{
+					QueueName:         "bar",
+					MaxNumberOfJobs:   2,
+					VisibilityTimeout: 1,
+				},
+			},
+			want: &GrabJobsOutput{
+				Jobs: nil,
+			},
+			wantErr: false,
+		},
+		{
+			name: "normal case",
+			fields: fields{
+				isUniqueViolation:  defaultIsisUniqueViolation,
+				isDeadlockDetected: defaultIsDeadlockDetected,
+				retryer:            exponential.Retryer{},
+				repo:               repo,
+			},
+			args: args{
+				ctx: context.Background(),
+				input: &GrabJobsInput{
+					QueueName:         "baz",
+					MaxNumberOfJobs:   2,
+					VisibilityTimeout: 1,
+				},
+			},
+			want: &GrabJobsOutput{
+				Jobs: nil,
+			},
+			wantErr: false,
+		},
+		{
 			name: "error case",
 			fields: fields{
 				isUniqueViolation:  defaultIsisUniqueViolation,
@@ -1232,6 +1286,24 @@ func TestConnector_GrabJobs(t *testing.T) {
 				ctx: context.Background(),
 				input: &GrabJobsInput{
 					QueueName: "",
+				},
+			},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "error case",
+			fields: fields{
+				isUniqueViolation:  defaultIsisUniqueViolation,
+				isDeadlockDetected: defaultIsDeadlockDetected,
+				retryer:            exponential.Retryer{},
+				repo:               repo,
+			},
+			args: args{
+				ctx: context.Background(),
+				input: &GrabJobsInput{
+					QueueName:       "foo",
+					MaxNumberOfJobs: -2,
 				},
 			},
 			want:    nil,
