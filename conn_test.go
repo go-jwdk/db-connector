@@ -1351,3 +1351,87 @@ func TestConnector_GrabJobs(t *testing.T) {
 		})
 	}
 }
+
+func TestConnector_ChangeJobVisibility(t *testing.T) {
+
+	repo := &repositoryMock{
+		getQueueAttributesFunc: func(ctx context.Context, queueName string) (*QueueAttributes, error) {
+			if queueName == "" {
+				return nil, errors.New("queue name is empty")
+			}
+			return &QueueAttributes{
+				Name:            queueName,
+				RawName:         "raw_" + queueName,
+				MaxReceiveCount: 2,
+			}, nil
+		},
+		updateJobVisibilityFunc: func(ctx context.Context, queueRawName, jobID string, visibilityTimeout int64) (updated bool, err error) {
+			return true, nil
+		},
+	}
+
+	type fields struct {
+		isUniqueViolation  func(err error) bool
+		isDeadlockDetected func(err error) bool
+		retryer            exponential.Retryer
+		repo               repository
+	}
+	type args struct {
+		ctx   context.Context
+		input *ChangeJobVisibilityInput
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		args    args
+		want    *ChangeJobVisibilityOutput
+		wantErr bool
+	}{
+		{
+			name: "normal case",
+			fields: fields{
+				isUniqueViolation:  defaultIsisUniqueViolation,
+				isDeadlockDetected: defaultIsDeadlockDetected,
+				retryer:            exponential.Retryer{},
+				repo:               repo,
+			},
+			args: args{
+				ctx: context.Background(),
+				input: &ChangeJobVisibilityInput{
+					Job: &jobworker.Job{
+						QueueName: "foo",
+						Content:   "hello",
+						Raw: &internal.Job{
+							JobID:   "foo-1",
+							Content: "hello",
+						},
+					},
+					VisibilityTimeout: 100,
+				},
+			},
+			want:    &ChangeJobVisibilityOutput{},
+			wantErr: false,
+		},
+		{
+			// TODO impl error case
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &Connector{
+				isUniqueViolation:  tt.fields.isUniqueViolation,
+				isDeadlockDetected: tt.fields.isDeadlockDetected,
+				retryer:            tt.fields.retryer,
+				repo:               tt.fields.repo,
+			}
+			got, err := c.ChangeJobVisibility(tt.args.ctx, tt.args.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ChangeJobVisibility() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("ChangeJobVisibility() got = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
