@@ -1478,3 +1478,74 @@ func TestConnector_ChangeJobVisibility(t *testing.T) {
 		})
 	}
 }
+
+func TestConnector_CreateQueue(t *testing.T) {
+
+	repo := &repositoryMock{
+		createQueueTableFunc: func(ctx context.Context, queueRawName string) error {
+			return nil
+		},
+		createQueueAttributesFunc: func(ctx context.Context, queueName, queueRawName string, visibilityTimeout, delaySeconds, maxReceiveCount int64, deadLetterTarget *string) error {
+			return nil
+		},
+	}
+
+	type fields struct {
+		isUniqueViolation  func(err error) bool
+		isDeadlockDetected func(err error) bool
+		retryer            exponential.Retryer
+		repo               repository
+	}
+	type args struct {
+		ctx   context.Context
+		input *CreateQueueInput
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		args    args
+		want    *CreateQueueOutput
+		wantErr bool
+	}{
+		{
+			name: "normal case",
+			fields: fields{
+				isUniqueViolation:  defaultIsisUniqueViolation,
+				isDeadlockDetected: defaultIsDeadlockDetected,
+				retryer:            exponential.Retryer{},
+				repo:               repo,
+			},
+			args: args{
+				ctx: context.Background(),
+				input: &CreateQueueInput{
+					Name:              "foo",
+					DelaySeconds:      10,
+					VisibilityTimeout: 20,
+					MaxReceiveCount:   3,
+					DeadLetterTarget:  "",
+				},
+			},
+			want:    &CreateQueueOutput{},
+			wantErr: false,
+		},
+		// TODO impl error case
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &Connector{
+				isUniqueViolation:  tt.fields.isUniqueViolation,
+				isDeadlockDetected: tt.fields.isDeadlockDetected,
+				retryer:            tt.fields.retryer,
+				repo:               tt.fields.repo,
+			}
+			got, err := c.CreateQueue(tt.args.ctx, tt.args.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("CreateQueue() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("CreateQueue() got = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
