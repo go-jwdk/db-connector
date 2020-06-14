@@ -1483,6 +1483,9 @@ func TestConnector_CreateQueue(t *testing.T) {
 
 	repo := &repositoryMock{
 		createQueueTableFunc: func(ctx context.Context, queueRawName string) error {
+			if queueRawName == "" {
+				return errors.New("queue raw name is empty")
+			}
 			return nil
 		},
 		createQueueAttributesFunc: func(ctx context.Context, queueName, queueRawName string, visibilityTimeout, delaySeconds, maxReceiveCount int64, deadLetterTarget *string) error {
@@ -1522,13 +1525,29 @@ func TestConnector_CreateQueue(t *testing.T) {
 					DelaySeconds:      10,
 					VisibilityTimeout: 20,
 					MaxReceiveCount:   3,
-					DeadLetterTarget:  "",
+					DeadLetterTarget:  "bar",
 				},
 			},
 			want:    &CreateQueueOutput{},
 			wantErr: false,
 		},
-		// TODO impl error case
+		{
+			name: "error case",
+			fields: fields{
+				isUniqueViolation:  defaultIsisUniqueViolation,
+				isDeadlockDetected: defaultIsDeadlockDetected,
+				retryer:            exponential.Retryer{},
+				repo:               repo,
+			},
+			args: args{
+				ctx: context.Background(),
+				input: &CreateQueueInput{
+					Name: "",
+				},
+			},
+			want:    nil,
+			wantErr: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

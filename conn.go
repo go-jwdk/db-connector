@@ -581,7 +581,10 @@ func (c *Connector) CreateQueue(ctx context.Context, input *CreateQueueInput) (*
 			input.DelaySeconds,
 			input.MaxReceiveCount,
 			deadLetterTarget)
-		if err != nil && !c.isUniqueViolation(err) {
+		if err != nil {
+			if c.isUniqueViolation(err) {
+				return nil
+			}
 			return err
 		}
 		return nil
@@ -595,6 +598,9 @@ func (c *Connector) CreateQueue(ctx context.Context, input *CreateQueueInput) (*
 }
 
 func queueRawName(name string) string {
+	if name == "" {
+		return ""
+	}
 	rawName := strings.Replace(name, ".", "_", -1)
 	return fmt.Sprintf("%s_%s", TablePrefix, rawName)
 }
