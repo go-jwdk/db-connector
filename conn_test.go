@@ -1366,6 +1366,9 @@ func TestConnector_ChangeJobVisibility(t *testing.T) {
 			}, nil
 		},
 		updateJobVisibilityFunc: func(ctx context.Context, queueRawName, jobID string, visibilityTimeout int64) (updated bool, err error) {
+			if jobID == "" {
+				return false, errors.New("job id is empty")
+			}
 			return true, nil
 		},
 	}
@@ -1413,7 +1416,47 @@ func TestConnector_ChangeJobVisibility(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			// TODO impl error case
+			name: "error case",
+			fields: fields{
+				isUniqueViolation:  defaultIsisUniqueViolation,
+				isDeadlockDetected: defaultIsDeadlockDetected,
+				retryer:            exponential.Retryer{},
+				repo:               repo,
+			},
+			args: args{
+				ctx: context.Background(),
+				input: &ChangeJobVisibilityInput{
+					Job: &jobworker.Job{
+						QueueName: "",
+					},
+					VisibilityTimeout: 0,
+				},
+			},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "error case",
+			fields: fields{
+				isUniqueViolation:  defaultIsisUniqueViolation,
+				isDeadlockDetected: defaultIsDeadlockDetected,
+				retryer:            exponential.Retryer{},
+				repo:               repo,
+			},
+			args: args{
+				ctx: context.Background(),
+				input: &ChangeJobVisibilityInput{
+					Job: &jobworker.Job{
+						Conn: nil,
+						Raw: &internal.Job{
+							JobID: "",
+						},
+					},
+					VisibilityTimeout: 0,
+				},
+			},
+			want:    nil,
+			wantErr: true,
 		},
 	}
 	for _, tt := range tests {
