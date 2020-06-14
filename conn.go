@@ -544,66 +544,6 @@ func (c *Connector) ChangeJobVisibility(ctx context.Context, input *ChangeJobVis
 	return &ChangeJobVisibilityOutput{}, nil
 }
 
-type RedriveJobInput struct {
-	From         string
-	To           string
-	Target       string
-	DelaySeconds int64
-}
-
-type RedriveJobOutput struct{}
-
-func (c *Connector) RedriveJob(ctx context.Context, input *RedriveJobInput) (*RedriveJobOutput, error) {
-	fromOut, err := c.GetQueueAttributes(ctx, &GetQueueAttributesInput{
-		QueueName: input.From,
-	})
-	if err != nil {
-		return nil, err
-	}
-	toOut, err := c.GetQueueAttributes(ctx, &GetQueueAttributesInput{
-		QueueName: input.To,
-	})
-	if err != nil {
-		return nil, err
-	}
-	_, err = c.retryer.Do(ctx, func(ctx context.Context) error {
-		return c.redriveJob(ctx, fromOut.Attributes, toOut.Attributes, input.Target, input.DelaySeconds)
-	}, func(err error) bool {
-		return c.isDeadlockDetected(err)
-	})
-	return &RedriveJobOutput{}, err
-}
-
-func (c *Connector) redriveJob(ctx context.Context, from, to *QueueAttributes, jobID string, delaySeconds int64) error {
-	job, err := c.repo.getJob(ctx, from.RawName, jobID)
-	if err != nil {
-		if internal.IsErrNoRows(err) {
-			// TODO logging
-			return nil
-		}
-		return err
-	}
-	return internal.WithTransaction(c.db, func(tx internal.Querier) error {
-		repo := c.repo.renew(tx)
-		err = repo.enqueueJob(ctx,
-			to.RawName,
-			job.JobID,
-			job.Content,
-			job.DeduplicationID,
-			job.GroupID,
-			delaySeconds,
-		)
-		if err != nil {
-			return err
-		}
-		err = repo.deleteJob(ctx, from.RawName, job.JobID)
-		if err != nil {
-			return err
-		}
-		return nil
-	})
-}
-
 type CreateQueueInput struct {
 	Name              string
 	DelaySeconds      int64
