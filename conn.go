@@ -69,10 +69,6 @@ func Open(cfg *Config) (*Connector, error) {
 			tmpl:    cfg.SQLTemplate,
 		},
 	}
-	err := conn.repo.createQueueAttributesTable(context.Background())
-	if err != nil {
-		return nil, err
-	}
 
 	return conn, nil
 }
@@ -570,7 +566,12 @@ func (c *Connector) CreateQueue(ctx context.Context, input *CreateQueueInput) (*
 		deadLetterTarget = &input.DeadLetterTarget
 	}
 	_, err := c.retryer.Do(ctx, func(ctx context.Context) error {
-		err := c.repo.createQueueTable(ctx, queueRawName)
+
+		err := c.repo.createQueueAttributesTable(ctx)
+		if err != nil {
+			return err
+		}
+		err = c.repo.createQueueTable(ctx, queueRawName)
 		if err != nil {
 			return err
 		}

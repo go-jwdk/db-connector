@@ -1491,6 +1491,9 @@ func TestConnector_CreateQueue(t *testing.T) {
 		createQueueAttributesFunc: func(ctx context.Context, queueName, queueRawName string, visibilityTimeout, delaySeconds, maxReceiveCount int64, deadLetterTarget *string) error {
 			return nil
 		},
+		createQueueAttributesTableFunc: func(ctx context.Context) error {
+			return nil
+		},
 	}
 
 	type fields struct {
