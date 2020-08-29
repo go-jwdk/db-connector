@@ -248,7 +248,7 @@ func (c *Connector) GetQueueAttributes(ctx context.Context, input *GetQueueAttri
 			return nil, err
 		}
 		v = q
-		c.name2Queue.StoreWithExpire(input.QueueName, v, c.queueAttributesExpire)
+		c.name2Queue.Store(input.QueueName, v, expiremap.Expire(c.queueAttributesExpire))
 	}
 	return &GetQueueAttributesOutput{
 		Attributes: v.(*QueueAttributes),
